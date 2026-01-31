@@ -35,7 +35,7 @@ struct OpenRouterClient {
         self.model = model
     }
 
-    func generateActionPlan(apiKey: String, instruction: String, clickMap: ClickMap) async throws -> Result {
+    func generateActionPlan(apiKey: String, instruction: String, clickMap: PageSnapshot) async throws -> Result {
         guard let url = URL(string: "https://openrouter.ai/api/v1/chat/completions") else {
             throw URLError(.badURL)
         }

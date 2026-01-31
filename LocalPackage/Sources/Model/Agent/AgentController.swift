@@ -46,6 +46,7 @@ public final class AgentController: ObservableObject {
 
     private let openRouterClient: OpenRouterClient
     private let clickMapService: ClickMapService
+    private let scrollService: ScrollService
     private let webViewRegistry: ActiveWebViewRegistry
     private var registryCancellable: AnyCancellable?
     private let keychainStore = KeychainStore()
@@ -78,6 +79,7 @@ public final class AgentController: ObservableObject {
     public init(command: String = "", isAgentModeEnabled: Bool = false, webViewRegistry: ActiveWebViewRegistry = .shared) {
         self.openRouterClient = OpenRouterClient()
         self.clickMapService = ClickMapService()
+        self.scrollService = ScrollService()
         self.webViewRegistry = webViewRegistry
         self.command = command
         self.isAgentModeEnabled = isAgentModeEnabled

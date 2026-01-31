@@ -265,7 +265,7 @@ public final class AgentController: ObservableObject {
 
     private func handleError(_ error: Error) {
         let message = (error as? AgentError)?.errorDescription ?? error.localizedDescription
-        if let message {
+        if !message.isEmpty {
             lastError = message
             appendLog(.init(date: Date(), kind: .error, message: message))
         }

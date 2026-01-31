@@ -95,7 +95,7 @@ public final class AgentController: ObservableObject {
             self.refreshWebViewAvailability()
             Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(150))
-                await self?.refreshWebViewAvailability()
+                self?.refreshWebViewAvailability()
             }
             #if DEBUG
             if let webView {
@@ -105,10 +105,6 @@ public final class AgentController: ObservableObject {
             }
             #endif
         }
-    }
-
-    deinit {
-        registryCancellable?.cancel()
     }
 
     public func attach(proxy: WebViewProxy) {
@@ -233,7 +229,7 @@ public final class AgentController: ObservableObject {
 
             let size = webView.bounds.size
             let isLoading = webView.isLoading
-            let readyState = try? await webView.evalJS("document.readyState") as? String
+            let readyState = try? await webView.evalJSString("document.readyState")
 
             if size != .zero, !isLoading, readyState == nil || readyState == "complete" || readyState == "interactive" {
                 return

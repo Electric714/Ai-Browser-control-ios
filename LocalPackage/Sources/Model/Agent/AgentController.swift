@@ -188,11 +188,9 @@ public final class AgentController: ObservableObject {
                 throw AgentError.blockedSensitiveAction(blocked)
             }
 
-            try await clickMapService.click(id: action.id, webView: webView)
+            let refreshed = try await clickMapService.executeClick(id: action.id, webView: webView)
             lastActionSummary = "clicked \(action.id): \"\(clickable.label)\""
             appendLog(.init(date: Date(), kind: .action, message: "Clicked \(action.id)"))
-
-            let refreshed = try await clickMapService.extractClickMap(webView: webView)
             lastClickablesCount = refreshed.clickables.count
         } catch AgentError.cancelled {
             appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))

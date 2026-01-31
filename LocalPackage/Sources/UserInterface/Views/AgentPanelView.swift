@@ -46,6 +46,10 @@ struct AgentPanelView: View {
 
                     Section("Status") {
                         Text("WebView ready: \(controller.isWebViewAvailable ? "Yes" : "No")")
+                        Text("Run status: \(runBlockers.isEmpty ? "Ready" : "Blocked by: \(runBlockers.joined(separator: \", \"))")")
+                        Text("Active WebView id: \(activeWebViewIdentifierDescription)")
+                        Text("WebView bounds: \(webViewBoundsDescription)")
+                        Text("WebView URL: \(controller.webViewURL ?? "nil")")
                         Text("Last extracted clickables count: \(controller.lastClickablesCount)")
                         if let lastActionSummary = controller.lastActionSummary, !lastActionSummary.isEmpty {
                             Text("Last executed action: \(lastActionSummary)")
@@ -93,6 +97,27 @@ struct AgentPanelView: View {
 
     private var isCommandEmpty: Bool {
         controller.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var runBlockers: [String] {
+        var blockers: [String] = []
+        if controller.isRunning { blockers.append("running") }
+        if !controller.isAgentModeEnabled { blockers.append("agent disabled") }
+        if controller.apiKey.isEmpty { blockers.append("missing api key") }
+        if isCommandEmpty { blockers.append("empty command") }
+        if !controller.isWebViewAvailable { blockers.append("webView unavailable") }
+        return blockers
+    }
+
+    private var activeWebViewIdentifierDescription: String {
+        controller.activeWebViewIdentifier.map { String(describing: $0) } ?? "nil"
+    }
+
+    private var webViewBoundsDescription: String {
+        guard let bounds = controller.webViewBounds else { return "nil" }
+        let width = Int(bounds.size.width)
+        let height = Int(bounds.size.height)
+        return "\(width)x\(height)"
     }
 }
 

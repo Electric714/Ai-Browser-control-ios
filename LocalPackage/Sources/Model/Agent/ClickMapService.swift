@@ -1,14 +1,14 @@
 import Foundation
 import WebKit
 
-struct ClickRect: Codable {
+struct ClickRect: Codable, Sendable {
     let x: Double
     let y: Double
     let w: Double
     let h: Double
 }
 
-struct Clickable: Codable {
+struct Clickable: Codable, Sendable {
     let id: String
     let role: String
     let label: String
@@ -18,7 +18,7 @@ struct Clickable: Codable {
     let disabled: Bool
 }
 
-struct PageSnapshot: Codable {
+struct PageSnapshot: Codable, Sendable {
     let url: String
     let title: String
     let clickables: [Clickable]
@@ -30,6 +30,7 @@ enum ClickMapError: Error {
     case elementNotFound
 }
 
+@MainActor
 final class ClickMapService {
     private let defaultSelector = "a[href],button,input[type=\"button\"],input[type=\"submit\"],[onclick],[role=\"button\"],[role=\"link\"]"
 
@@ -151,8 +152,7 @@ final class ClickMapService {
 
     func extractClickMap(webView: WKWebView, selector: String? = nil) async throws -> PageSnapshot {
         let js = extractJS(selector: selector ?? defaultSelector)
-        let result = try await webView.evalJS(js)
-        guard let json = result as? String else { throw ClickMapError.jsReturnedNil }
+        let json = try await webView.evalJSString(js)
         guard let data = json.data(using: .utf8) else { throw ClickMapError.decodeFailed }
         return try JSONDecoder().decode(PageSnapshot.self, from: data)
     }
@@ -167,8 +167,8 @@ final class ClickMapService {
           return "OK";
         })();
         """
-        let result = try await webView.evalJS(js)
-        if let s = result as? String, s == "NOT_FOUND" {
+        let result = try await webView.evalJSString(js)
+        if result == "NOT_FOUND" {
             throw ClickMapError.elementNotFound
         }
     }
@@ -183,8 +183,8 @@ final class ClickMapService {
           return "OK";
         })();
         """
-        let result = try await webView.evalJS(js)
-        if let s = result as? String, s == "NOT_FOUND" {
+        let result = try await webView.evalJSString(js)
+        if result == "NOT_FOUND" {
             throw ClickMapError.elementNotFound
         }
         return try await extractClickMap(webView: webView, selector: selector)
@@ -192,13 +192,23 @@ final class ClickMapService {
 }
 
 extension WKWebView {
-    func evalJS(_ js: String) async throws -> Any? {
+    enum EvalJSError: Error {
+        case jsReturnedNil
+    }
+
+    func evalJSString(_ js: String) async throws -> String {
         try await withCheckedThrowingContinuation { cont in
             self.evaluateJavaScript(js) { result, error in
                 if let error = error {
                     cont.resume(throwing: error)
                 } else {
-                    cont.resume(returning: result)
+                    if let result = result as? String {
+                        cont.resume(returning: result)
+                    } else if let result = result {
+                        cont.resume(returning: String(describing: result))
+                    } else {
+                        cont.resume(throwing: EvalJSError.jsReturnedNil)
+                    }
                 }
             }
         }

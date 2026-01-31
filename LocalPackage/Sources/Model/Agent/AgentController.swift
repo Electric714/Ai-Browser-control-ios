@@ -107,10 +107,6 @@ public final class AgentController: ObservableObject {
         }
     }
 
-    deinit {
-        registryCancellable?.cancel()
-    }
-
     public func attach(proxy: WebViewProxy) {
         self.webViewProxy = proxy
         webViewRegistry.update(from: proxy)
@@ -233,7 +229,7 @@ public final class AgentController: ObservableObject {
 
             let size = webView.bounds.size
             let isLoading = webView.isLoading
-            let readyState = try? await webView.evalJS("document.readyState") as? String
+            let readyState = try? await webView.evalJSString("document.readyState")
 
             if size != .zero, !isLoading, readyState == nil || readyState == "complete" || readyState == "interactive" {
                 return

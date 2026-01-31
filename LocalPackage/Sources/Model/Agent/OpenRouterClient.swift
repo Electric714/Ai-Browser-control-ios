@@ -1,10 +1,6 @@
 import Foundation
 
 struct OpenRouterClient {
-    enum OpenRouterClientError: Error {
-        case invalidJSON
-        case emptyResponse
-    }
     struct RequestPayload: Encodable {
         let model: String
         let messages: [Message]
@@ -39,14 +35,14 @@ struct OpenRouterClient {
         self.model = model
     }
 
-    func generateActionPlan(apiKey: String, instruction: String, snapshot: PageSnapshot) async throws -> Result {
+    func generateActionPlan(apiKey: String, instruction: String, clickMap: PageSnapshot) async throws -> Result {
         guard let url = URL(string: "https://openrouter.ai/api/v1/chat/completions") else {
             throw URLError(.badURL)
         }
 
         let encoder = JSONEncoder()
-        let snapshotData = try encoder.encode(snapshot)
-        let snapshotText = String(data: snapshotData, encoding: .utf8) ?? "{}"
+        let clickMapData = try encoder.encode(clickMap)
+        let clickMapText = String(data: clickMapData, encoding: .utf8) ?? "{}"
 
         let systemPrompt = """
         You are an automation planner. Return JSON only. No markdown. No extra text.
@@ -57,8 +53,8 @@ struct OpenRouterClient {
 
         let userPrompt = """
         Instruction: \(instruction)
-        Page: \(snapshot.url) (title: \(snapshot.title))
-        Clickables JSON: \(snapshotText)
+        Page: \(clickMap.url) (title: \(clickMap.title))
+        Click map JSON: \(clickMapText)
         """
 
         let payload = RequestPayload(
@@ -84,15 +80,7 @@ struct OpenRouterClient {
 
         let decoded = try JSONDecoder().decode(ResponsePayload.self, from: data)
         let text = decoded.choices.first?.message.content ?? ""
-        guard let textData = text.data(using: .utf8), !text.isEmpty else {
-            throw OpenRouterClientError.emptyResponse
-        }
-        let plan: ActionPlan
-        do {
-            plan = try JSONDecoder().decode(ActionPlan.self, from: textData)
-        } catch {
-            throw OpenRouterClientError.invalidJSON
-        }
+        let plan = try AgentParser().parseActionPlan(from: text)
         return Result(rawText: text, plan: plan)
     }
 }

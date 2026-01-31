@@ -14,7 +14,6 @@ public final class AgentController: ObservableObject {
         case webViewLoading(URL?)
         case pageNotReady(URL?)
         case invalidResponse
-        case invalidAction
         case missingClickable
         case blockedSensitiveAction(String)
         case cancelled
@@ -35,8 +34,6 @@ public final class AgentController: ObservableObject {
                 return "Cannot extract click map: the page did not finish loading in time (\(url?.absoluteString ?? "unknown URL"))."
             case .invalidResponse:
                 return "Model returned invalid JSON."
-            case .invalidAction:
-                return "Model returned an unsupported action."
             case .missingClickable:
                 return "Model chose a missing clickable element."
             case let .blockedSensitiveAction(label):
@@ -53,6 +50,7 @@ public final class AgentController: ObservableObject {
     private var registryCancellable: AnyCancellable?
     private let keychainStore = KeychainStore()
     private let logger = Logger(subsystem: "Agent", category: "ClickMap")
+    private let sensitiveClickTerms = ["pay", "purchase", "checkout", "transfer", "send money"]
 
     private var webViewProxy: WebViewProxy?
     private var runTask: Task<Void, Never>?
@@ -167,10 +165,10 @@ public final class AgentController: ObservableObject {
 
         do {
             try await waitForWebViewReadiness(webView)
-            let snapshot = try await clickMapService.extractSnapshot(webView: webView)
-            lastClickablesCount = snapshot.clickables.count
+            let clickMap = try await clickMapService.extractClickMap(webView: webView)
+            lastClickablesCount = clickMap.clickables.count
 
-            let result = try await openRouterClient.generateActionPlan(apiKey: apiKey, instruction: command, snapshot: snapshot)
+            let result = try await openRouterClient.generateActionPlan(apiKey: apiKey, instruction: command, clickMap: clickMap)
             lastModelOutput = result.rawText
             appendLog(.init(date: Date(), kind: .model, message: result.rawText))
 
@@ -178,29 +176,21 @@ public final class AgentController: ObservableObject {
                 appendLog(.init(date: Date(), kind: .warning, message: "No actions returned"))
                 return
             }
-            guard action.type.lowercased() == "click" else {
-                throw AgentError.invalidAction
-            }
-            guard let clickable = snapshot.clickables.first(where: { $0.id == action.id }) else {
+            guard let clickable = clickMap.clickables.first(where: { $0.id == action.id }) else {
                 throw AgentError.missingClickable
             }
             if let blocked = blockedLabel(for: clickable.label) {
                 throw AgentError.blockedSensitiveAction(blocked)
             }
 
-            try await clickMapService.click(id: action.id, webView: webView)
+            let refreshed = try await clickMapService.executeClick(id: action.id, webView: webView)
             lastActionSummary = "clicked \(action.id): \"\(clickable.label)\""
             appendLog(.init(date: Date(), kind: .action, message: "Clicked \(action.id)"))
-
-            let refreshed = try await clickMapService.extractSnapshot(webView: webView)
             lastClickablesCount = refreshed.clickables.count
         } catch AgentError.cancelled {
             appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))
-        } catch let error as OpenRouterClient.OpenRouterClientError {
-            switch error {
-            case .invalidJSON, .emptyResponse:
-                handleError(AgentError.invalidResponse)
-            }
+        } catch let error as AgentParserError {
+            handleError(error)
         } catch let error as AgentError {
             handleError(error)
         } catch {
@@ -211,8 +201,7 @@ public final class AgentController: ObservableObject {
     private func blockedLabel(for label: String) -> String? {
         guard !allowSensitiveClicks else { return nil }
         let lowered = label.lowercased()
-        let blockedTerms = ["pay", "purchase", "checkout", "transfer", "send money"]
-        if let match = blockedTerms.first(where: { lowered.contains($0) }) {
+        if let match = sensitiveClickTerms.first(where: { lowered.contains($0) }) {
             return match
         }
         return nil

@@ -6,7 +6,11 @@ public struct ActionPlan: Codable, Sendable {
 }
 
 public struct AgentAction: Codable, Equatable, Sendable {
-    public let type: String
+    public enum ActionType: String, Codable, Sendable {
+        case click
+    }
+
+    public let type: ActionType
     public let id: String
 }
 

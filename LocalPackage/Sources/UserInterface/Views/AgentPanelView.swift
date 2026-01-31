@@ -2,7 +2,7 @@ import Model
 import SwiftUI
 
 struct AgentPanelView: View {
-    @ObservedObject var controller: AgentController
+    @ObservedObject var controller: AIAgentController
     @State private var isShowingKey = false
 
     var body: some View {
@@ -58,9 +58,9 @@ struct AgentPanelView: View {
                     }
 
                     Section("Status") {
-                        Text("Clickables detected: \(controller.lastClickablesCount)")
+                        Text("Last clickables count: \(controller.lastClickablesCount)")
                         if let action = controller.lastActionSummary {
-                            Text("Last action: \(action)")
+                            Text("Last executed action: \(action)")
                         }
                         if let error = controller.lastError {
                             Text(error)

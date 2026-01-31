@@ -5,14 +5,14 @@ import WebUI
 struct BrowserView: View {
     @StateObject var store: Browser
     @StateObject private var webViewRegistry: ActiveWebViewRegistry
-    @StateObject private var agentController: AgentController
+    @StateObject private var agentController: AIAgentController
     @State private var isPresentingAgentPanel = false
 
     init(store: Browser) {
         _store = StateObject(wrappedValue: store)
         let registry = ActiveWebViewRegistry()
         _webViewRegistry = StateObject(wrappedValue: registry)
-        _agentController = StateObject(wrappedValue: AgentController(webViewRegistry: registry))
+        _agentController = StateObject(wrappedValue: AIAgentController(webViewRegistry: registry))
     }
 
     var body: some View {

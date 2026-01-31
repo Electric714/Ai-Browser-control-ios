@@ -5,7 +5,7 @@ import WebUI
 import WebKit
 
 @MainActor
-public final class AgentController: ObservableObject {
+public final class AIAgentController: ObservableObject {
     private enum AgentError: LocalizedError {
         case missingAPIKey
         case missingWebView

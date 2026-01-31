@@ -35,9 +35,9 @@ final class ClickMapService {
 
     private func extractJS(selector: String) -> String {
         let escapedSelector = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        return """
+        return #"""
         (function() {
-          const selector = "\(escapedSelector)";
+          const selector = "\#(escapedSelector)";
           const els = Array.from(document.querySelectorAll(selector));
           const w = window.innerWidth || 1;
           const h = window.innerHeight || 1;
@@ -146,7 +146,7 @@ final class ClickMapService {
 
           return JSON.stringify(payload);
         })();
-        """
+        """#
     }
 
     func extractClickMap(webView: WKWebView, selector: String? = nil) async throws -> PageSnapshot {

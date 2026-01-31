@@ -9,7 +9,7 @@ struct AgentPanelView: View {
         NavigationStack {
             VStack(spacing: 12) {
                 Form {
-                    Section("Gemini API Key") {
+                    Section("OpenRouter API Key") {
                         HStack {
                             if isShowingKey {
                                 TextField("Enter API Key", text: $controller.apiKey)
@@ -29,45 +29,42 @@ struct AgentPanelView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Section("Goal") {
-                        TextField("Describe the goal for the agent", text: $controller.goal, axis: .vertical)
+                    Section("AI Command") {
+                        TextField("Describe what to click", text: $controller.command, axis: .vertical)
                             .lineLimit(1...3)
                     }
 
-                    Section("Agent Controls") {
-                        Toggle("Enable Agent Mode", isOn: $controller.isAgentModeEnabled)
-                        Stepper(value: $controller.stepLimit, in: 1...50) {
-                            Text("Auto run step limit: \(controller.stepLimit)")
-                        }
+                    Section("AI Controls") {
+                        Toggle("Enable AI click control", isOn: $controller.isAgentModeEnabled)
+                        Toggle("Allow sensitive clicks", isOn: $controller.allowSensitiveClicks)
+                            .tint(.orange)
                         HStack {
-                            Button("Step Once") { controller.step() }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(!controller.isAgentModeEnabled || controller.goal.isEmpty || !controller.isWebViewAvailable)
                             Button(controller.isRunning ? "Running..." : "Run") {
-                                controller.runAutomatically()
+                                controller.runCommand()
                             }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!controller.isAgentModeEnabled || controller.command.isEmpty || controller.isRunning || !controller.isWebViewAvailable)
+                            Button("Stop") {
+                                controller.stop()
+                            }
+                            .tint(.red)
                             .buttonStyle(.bordered)
-                            .disabled(!controller.isAgentModeEnabled || controller.goal.isEmpty || controller.isRunning || !controller.isWebViewAvailable)
-                            Button("Stop") { controller.stop() }
-                                .tint(.red)
-                                .buttonStyle(.bordered)
                         }
-                        Button("Test Snapshot") {
-                            controller.testSnapshotCapture()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(!controller.isWebViewAvailable)
                         if !controller.isWebViewAvailable {
-                            Text("Waiting for the web view to finish loading before running the agent.")
+                            Text("Waiting for the web view to finish loading before running the AI.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
-                        if controller.awaitingSafetyConfirmation {
-                            Button("Continue after safety warning") {
-                                controller.resumeAfterSafetyCheck()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.orange)
+                    }
+
+                    Section("Status") {
+                        Text("Clickables detected: \(controller.lastClickablesCount)")
+                        if let action = controller.lastActionSummary {
+                            Text("Last action: \(action)")
+                        }
+                        if let error = controller.lastError {
+                            Text(error)
+                                .foregroundStyle(.red)
                         }
                     }
                 }
@@ -94,7 +91,7 @@ struct AgentPanelView: View {
                 }
                 .padding(.horizontal)
             }
-            .navigationTitle("Agent Mode")
+            .navigationTitle("AI Click Control")
         }
     }
 }

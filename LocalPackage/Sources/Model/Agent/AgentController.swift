@@ -167,10 +167,10 @@ public final class AgentController: ObservableObject {
 
         do {
             try await waitForWebViewReadiness(webView)
-            let snapshot = try await clickMapService.extractSnapshot(webView: webView)
-            lastClickablesCount = snapshot.clickables.count
+            let clickMap = try await clickMapService.extractClickMap(webView: webView)
+            lastClickablesCount = clickMap.clickables.count
 
-            let result = try await openRouterClient.generateActionPlan(apiKey: apiKey, instruction: command, snapshot: snapshot)
+            let result = try await openRouterClient.generateActionPlan(apiKey: apiKey, instruction: command, clickMap: clickMap)
             lastModelOutput = result.rawText
             appendLog(.init(date: Date(), kind: .model, message: result.rawText))
 
@@ -181,7 +181,7 @@ public final class AgentController: ObservableObject {
             guard action.type.lowercased() == "click" else {
                 throw AgentError.invalidAction
             }
-            guard let clickable = snapshot.clickables.first(where: { $0.id == action.id }) else {
+            guard let clickable = clickMap.clickables.first(where: { $0.id == action.id }) else {
                 throw AgentError.missingClickable
             }
             if let blocked = blockedLabel(for: clickable.label) {
@@ -192,7 +192,7 @@ public final class AgentController: ObservableObject {
             lastActionSummary = "clicked \(action.id): \"\(clickable.label)\""
             appendLog(.init(date: Date(), kind: .action, message: "Clicked \(action.id)"))
 
-            let refreshed = try await clickMapService.extractSnapshot(webView: webView)
+            let refreshed = try await clickMapService.extractClickMap(webView: webView)
             lastClickablesCount = refreshed.clickables.count
         } catch AgentError.cancelled {
             appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))

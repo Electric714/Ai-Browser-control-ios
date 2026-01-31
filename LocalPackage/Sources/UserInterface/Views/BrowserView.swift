@@ -69,9 +69,19 @@ struct BrowserView: View {
                     }
                 }
                 if !store.isPresentedToolbar {
-                    ShowToolbarButton(store: store)
-                        .padding(20)
-                        .transition(.move(edge: .bottom))
+                    VStack(spacing: 12) {
+                        Button {
+                            isPresentingAgentPanel = true
+                        } label: {
+                            Image(systemName: "sparkles")
+                                .padding(14)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                        }
+                        ShowToolbarButton(store: store)
+                    }
+                    .padding(20)
+                    .transition(.move(edge: .bottom))
                 }
             }
         }

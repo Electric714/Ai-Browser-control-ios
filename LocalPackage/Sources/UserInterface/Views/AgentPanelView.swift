@@ -45,12 +45,12 @@ struct AgentPanelView: View {
                     }
 
                     Section("Status") {
-                        Text("Web view available: \(controller.isWebViewAvailable ? "Yes" : "No")")
+                        Text("WebView ready: \(controller.isWebViewAvailable ? "Yes" : "No")")
                         Text("Last extracted clickables count: \(controller.lastClickablesCount)")
-                        if let lastActionSummary = controller.lastActionSummary {
+                        if let lastActionSummary = controller.lastActionSummary, !lastActionSummary.isEmpty {
                             Text("Last executed action: \(lastActionSummary)")
                         }
-                        if let lastError = controller.lastError {
+                        if let lastError = controller.lastError, !lastError.isEmpty {
                             Text(lastError)
                                 .foregroundStyle(.red)
                         }

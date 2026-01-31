@@ -1,10 +1,6 @@
 import Foundation
 
 struct OpenRouterClient {
-    enum OpenRouterClientError: Error {
-        case invalidJSON
-        case emptyResponse
-    }
     struct RequestPayload: Encodable {
         let model: String
         let messages: [Message]
@@ -84,15 +80,7 @@ struct OpenRouterClient {
 
         let decoded = try JSONDecoder().decode(ResponsePayload.self, from: data)
         let text = decoded.choices.first?.message.content ?? ""
-        guard let textData = text.data(using: .utf8), !text.isEmpty else {
-            throw OpenRouterClientError.emptyResponse
-        }
-        let plan: ActionPlan
-        do {
-            plan = try JSONDecoder().decode(ActionPlan.self, from: textData)
-        } catch {
-            throw OpenRouterClientError.invalidJSON
-        }
+        let plan = try AgentParser().parseActionPlan(from: text)
         return Result(rawText: text, plan: plan)
     }
 }

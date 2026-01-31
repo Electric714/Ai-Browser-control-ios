@@ -46,11 +46,13 @@ public final class AgentController: ObservableObject {
 
     private let openRouterClient: OpenRouterClient
     private let clickMapService: ClickMapService
+    private let scrollService: ScrollService
     private let webViewRegistry: ActiveWebViewRegistry
     private var registryCancellable: AnyCancellable?
     private let keychainStore = KeychainStore()
     private let logger = Logger(subsystem: "Agent", category: "ClickMap")
     private let sensitiveClickTerms = ["pay", "purchase", "checkout", "transfer", "send money"]
+    private let maxActionsToExecute = 3
 
     private var webViewProxy: WebViewProxy?
     private var runTask: Task<Void, Never>?
@@ -66,10 +68,9 @@ public final class AgentController: ObservableObject {
     @Published public private(set) var lastClickablesCount: Int
     @Published public private(set) var lastError: String?
     @Published public private(set) var isWebViewAvailable: Bool
-
-    public var activeWebViewIdentifier: ObjectIdentifier? {
-        webViewRegistry.currentIdentifier()
-    }
+    @Published public private(set) var webViewBounds: CGRect?
+    @Published public private(set) var webViewURL: String?
+    @Published public private(set) var activeWebViewIdentifier: ObjectIdentifier?
     @Published public var apiKey: String {
         didSet {
             _ = keychainStore.save(key: "openRouterAPIKey", value: apiKey)
@@ -79,6 +80,7 @@ public final class AgentController: ObservableObject {
     public init(command: String = "", isAgentModeEnabled: Bool = false, webViewRegistry: ActiveWebViewRegistry = .shared) {
         self.openRouterClient = OpenRouterClient()
         self.clickMapService = ClickMapService()
+        self.scrollService = ScrollService()
         self.webViewRegistry = webViewRegistry
         self.command = command
         self.isAgentModeEnabled = isAgentModeEnabled
@@ -91,6 +93,9 @@ public final class AgentController: ObservableObject {
         self.lastError = nil
         self.apiKey = keychainStore.load(key: "openRouterAPIKey") ?? ""
         self.isWebViewAvailable = false
+        self.webViewBounds = nil
+        self.webViewURL = nil
+        self.activeWebViewIdentifier = nil
         registryCancellable = webViewRegistry.$webView.sink { [weak self] webView in
             guard let self else { return }
             self.refreshWebViewAvailability()
@@ -112,6 +117,10 @@ public final class AgentController: ObservableObject {
         self.webViewProxy = proxy
         webViewRegistry.update(from: proxy)
         refreshWebViewAvailability()
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            await self?.refreshWebViewAvailability()
+        }
     }
 
     public func toggleAgentMode(_ enabled: Bool) {
@@ -160,51 +169,66 @@ public final class AgentController: ObservableObject {
         isRunning = true
         defer { isRunning = false }
 
+        var requestId: String?
         do {
             try await waitForWebViewReadiness(webView)
             let clickMap = try await clickMapService.extractClickMap(webView: webView)
             lastClickablesCount = clickMap.clickables.count
+            try Task.checkCancellation()
 
-            let requestId = UUID().uuidString
-            appendLog(.init(date: Date(), kind: .info, message: "Sending OpenRouter request id=\(requestId) key=\(redactedKey(apiKey))"))
-            let payloadPreview = openRouterClient.payloadPreview(instruction: command, clickMap: clickMap, allowSensitiveClicks: allowSensitiveClicks)
-            appendLog(.init(date: Date(), kind: .info, message: "OpenRouter payload preview: \(payloadPreview)"))
+            let id = UUID().uuidString
+            requestId = id
+            let redactedKey = redact(apiKey: apiKey)
+            appendLog(.init(date: Date(), kind: .info, message: "Sending OpenRouter request id=\(id) key=\(redactedKey)"))
+            let payloadLog = openRouterClient.redactedPayloadString(instruction: command, clickMap: clickMap, allowSensitiveClicks: allowSensitiveClicks)
+            appendLog(.init(date: Date(), kind: .info, message: "Request payload (redacted): \(payloadLog)"))
+
             let result = try await openRouterClient.generateActionPlan(
                 apiKey: apiKey,
-                requestId: requestId,
                 instruction: command,
                 clickMap: clickMap,
-                allowSensitiveClicks: allowSensitiveClicks
+                allowSensitiveClicks: allowSensitiveClicks,
+                requestId: id
             )
-            appendLog(.init(date: Date(), kind: .info, message: "OpenRouter response id=\(result.requestId) status=\(result.statusCode) bytes=\(result.responseBytes) latency=\(result.latencyMs)ms"))
             lastModelOutput = result.rawText
             appendLog(.init(date: Date(), kind: .model, message: result.rawText))
+            appendLog(.init(
+                date: Date(),
+                kind: .info,
+                message: "OpenRouter response id=\(result.metadata.requestId) status=\(result.metadata.statusCode) bytes=\(result.metadata.responseBytes) latency=\(result.metadata.latencyMs)ms"
+            ))
+            try Task.checkCancellation()
 
-            let plan = try AgentParser().parseActionPlan(from: result.rawText, clickMap: clickMap)
-            if let error = plan.error?.trimmingCharacters(in: .whitespacesAndNewlines), !error.isEmpty {
-                appendLog(.init(date: Date(), kind: .warning, message: "Model error: \(error)"))
+            if let error = result.plan.error, !error.isEmpty {
+                lastError = error
+                appendLog(.init(date: Date(), kind: .error, message: error))
                 return
             }
 
-            let actions = plan.actions ?? []
-            guard !actions.isEmpty else {
-                appendLog(.init(date: Date(), kind: .warning, message: "No actions returned"))
-                return
-            }
-
-            let executedActions = try await executeActions(actions, clickMap: clickMap, webView: webView)
-            if !executedActions.isEmpty {
-                lastActionSummary = executedActions.joined(separator: "; ")
+            var snapshot = clickMap
+            let actions = Array(result.plan.actions.prefix(maxActionsToExecute))
+            appendLog(.init(date: Date(), kind: .info, message: "Parsed \(actions.count) action(s)"))
+            for action in actions {
+                try Task.checkCancellation()
+                if try await handleAction(action, webView: webView, snapshot: &snapshot) == false {
+                    return
+                }
             }
         } catch AgentError.cancelled {
             appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))
-        } catch let error as OpenRouterClient.OpenRouterClientError {
-            appendLog(.init(date: Date(), kind: .error, message: error.localizedDescription))
+        } catch is CancellationError {
+            appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))
         } catch let error as AgentParserError {
+            if let requestId {
+                appendLog(.init(date: Date(), kind: .error, message: "OpenRouter parse failed id=\(requestId)"))
+            }
             handleError(error)
         } catch let error as AgentError {
             handleError(error)
         } catch {
+            if let requestId {
+                appendLog(.init(date: Date(), kind: .error, message: "OpenRouter request failed id=\(requestId)"))
+            }
             handleError(error)
         }
     }
@@ -231,7 +255,69 @@ public final class AgentController: ObservableObject {
 
     private func refreshWebViewAvailability() {
         let view = webViewRegistry.current()
-        isWebViewAvailable = (view != nil && view?.window != nil)
+        if let view {
+            webViewBounds = view.bounds
+            webViewURL = view.url?.absoluteString
+            activeWebViewIdentifier = ObjectIdentifier(view)
+            isWebViewAvailable = view.bounds.size != .zero
+        } else {
+            webViewBounds = nil
+            webViewURL = nil
+            activeWebViewIdentifier = nil
+            isWebViewAvailable = false
+        }
+    }
+
+    private func handleAction(_ action: AgentAction, webView: WKWebView, snapshot: inout PageSnapshot) async throws -> Bool {
+        switch action {
+        case let .click(id):
+            guard let clickable = snapshot.clickables.first(where: { $0.id == id }) else {
+                throw AgentError.missingClickable
+            }
+            if let blocked = blockedLabel(for: clickable.label) {
+                throw AgentError.blockedSensitiveAction(blocked)
+            }
+            appendLog(.init(date: Date(), kind: .action, message: "Click \(id) \"\(clickable.label)\""))
+            try await clickMapService.click(id: id, webView: webView)
+            try await waitForWebViewReadiness(webView)
+            snapshot = try await clickMapService.extractClickMap(webView: webView)
+            lastClickablesCount = snapshot.clickables.count
+            lastActionSummary = "clicked \(id): \"\(clickable.label)\""
+        case let .type(id, selector, text):
+            appendLog(.init(date: Date(), kind: .action, message: "Type \(text.count) chars"))
+            try await clickMapService.typeText(id: id, selector: selector, text: text, webView: webView)
+            try await waitForWebViewReadiness(webView)
+            snapshot = try await clickMapService.extractClickMap(webView: webView)
+            lastClickablesCount = snapshot.clickables.count
+            lastActionSummary = "typed \(text.count) chars"
+        case let .scroll(direction, amount):
+            appendLog(.init(date: Date(), kind: .action, message: "Scroll \(direction.rawValue) \(amount)px"))
+            try await clickMapService.scroll(direction: direction, amount: amount, webView: webView)
+            try await waitForWebViewReadiness(webView)
+            snapshot = try await clickMapService.extractClickMap(webView: webView)
+            lastClickablesCount = snapshot.clickables.count
+            lastActionSummary = "scrolled \(direction.rawValue) \(amount)px"
+        case let .wait(ms):
+            appendLog(.init(date: Date(), kind: .action, message: "Wait \(ms)ms"))
+            try await Task.sleep(for: .milliseconds(ms))
+            lastActionSummary = "waited \(ms)ms"
+        case let .navigate(url):
+            appendLog(.init(date: Date(), kind: .action, message: "Navigate \(url)"))
+            try await clickMapService.navigate(url: url, webView: webView)
+            try await waitForWebViewReadiness(webView)
+            snapshot = try await clickMapService.extractClickMap(webView: webView)
+            lastClickablesCount = snapshot.clickables.count
+            lastActionSummary = "navigated to \(url)"
+        case let .askUser(question):
+            appendLog(.init(date: Date(), kind: .result, message: "AI question: \(question)"))
+            lastActionSummary = "ask_user: \(question)"
+            return false
+        case let .done(summary):
+            appendLog(.init(date: Date(), kind: .result, message: "Done: \(summary)"))
+            lastActionSummary = summary
+            return false
+        }
+        return true
     }
 
     private func waitForWebViewReadiness(_ webView: WKWebView) async throws {
@@ -387,5 +473,12 @@ public final class AgentController: ObservableObject {
 
     private func appendLog(_ entry: AgentLogEntry) {
         logs.append(entry)
+    }
+
+    private func redact(apiKey: String) -> String {
+        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "<empty>" }
+        let suffix = trimmed.suffix(4)
+        return "sk-or-…\(suffix)"
     }
 }

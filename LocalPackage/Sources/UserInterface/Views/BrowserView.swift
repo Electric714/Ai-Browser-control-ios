@@ -131,6 +131,11 @@ private extension BrowserView {
     func updateActiveWebView(proxy: WebViewProxy) {
         webViewRegistry.update(from: proxy)
         agentController.attach(proxy: proxy)
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            webViewRegistry.update(from: proxy)
+            agentController.attach(proxy: proxy)
+        }
     }
 }
 

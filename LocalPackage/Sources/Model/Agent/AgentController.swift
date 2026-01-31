@@ -53,6 +53,7 @@ public final class AgentController: ObservableObject {
     private var registryCancellable: AnyCancellable?
     private let keychainStore = KeychainStore()
     private let logger = Logger(subsystem: "Agent", category: "ClickMap")
+    private let sensitiveClickTerms = ["pay", "purchase", "checkout", "transfer", "send money"]
 
     private var webViewProxy: WebViewProxy?
     private var runTask: Task<Void, Never>?
@@ -211,8 +212,7 @@ public final class AgentController: ObservableObject {
     private func blockedLabel(for label: String) -> String? {
         guard !allowSensitiveClicks else { return nil }
         let lowered = label.lowercased()
-        let blockedTerms = ["pay", "purchase", "checkout", "transfer", "send money"]
-        if let match = blockedTerms.first(where: { lowered.contains($0) }) {
+        if let match = sensitiveClickTerms.first(where: { lowered.contains($0) }) {
             return match
         }
         return nil

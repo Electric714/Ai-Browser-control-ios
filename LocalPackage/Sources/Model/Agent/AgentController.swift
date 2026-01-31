@@ -95,7 +95,7 @@ public final class AgentController: ObservableObject {
             self.refreshWebViewAvailability()
             Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(150))
-                await self?.refreshWebViewAvailability()
+                self?.refreshWebViewAvailability()
             }
             #if DEBUG
             if let webView {

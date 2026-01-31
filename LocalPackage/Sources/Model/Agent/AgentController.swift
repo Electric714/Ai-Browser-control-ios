@@ -65,10 +65,9 @@ public final class AgentController: ObservableObject {
     @Published public private(set) var lastClickablesCount: Int
     @Published public private(set) var lastError: String?
     @Published public private(set) var isWebViewAvailable: Bool
-
-    public var activeWebViewIdentifier: ObjectIdentifier? {
-        webViewRegistry.currentIdentifier()
-    }
+    @Published public private(set) var webViewBounds: CGRect?
+    @Published public private(set) var webViewURL: String?
+    @Published public private(set) var activeWebViewIdentifier: ObjectIdentifier?
     @Published public var apiKey: String {
         didSet {
             _ = keychainStore.save(key: "openRouterAPIKey", value: apiKey)
@@ -90,6 +89,9 @@ public final class AgentController: ObservableObject {
         self.lastError = nil
         self.apiKey = keychainStore.load(key: "openRouterAPIKey") ?? ""
         self.isWebViewAvailable = false
+        self.webViewBounds = nil
+        self.webViewURL = nil
+        self.activeWebViewIdentifier = nil
         registryCancellable = webViewRegistry.$webView.sink { [weak self] webView in
             guard let self else { return }
             self.refreshWebViewAvailability()
@@ -111,6 +113,10 @@ public final class AgentController: ObservableObject {
         self.webViewProxy = proxy
         webViewRegistry.update(from: proxy)
         refreshWebViewAvailability()
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            await self?.refreshWebViewAvailability()
+        }
     }
 
     public func toggleAgentMode(_ enabled: Bool) {
@@ -216,7 +222,17 @@ public final class AgentController: ObservableObject {
 
     private func refreshWebViewAvailability() {
         let view = webViewRegistry.current()
-        isWebViewAvailable = (view != nil && view?.window != nil)
+        if let view {
+            webViewBounds = view.bounds
+            webViewURL = view.url?.absoluteString
+            activeWebViewIdentifier = ObjectIdentifier(view)
+            isWebViewAvailable = view.bounds.size != .zero
+        } else {
+            webViewBounds = nil
+            webViewURL = nil
+            activeWebViewIdentifier = nil
+            isWebViewAvailable = false
+        }
     }
 
     private func waitForWebViewReadiness(_ webView: WKWebView) async throws {

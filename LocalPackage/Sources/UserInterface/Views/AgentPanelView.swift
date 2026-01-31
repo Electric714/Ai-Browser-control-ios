@@ -2,7 +2,7 @@ import Model
 import SwiftUI
 
 struct AgentPanelView: View {
-    @ObservedObject var controller: AIAgentController
+    @ObservedObject var controller: AgentController
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {

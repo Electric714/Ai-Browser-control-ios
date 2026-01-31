@@ -1,11 +1,6 @@
 import Foundation
 import WebKit
 
-struct Viewport: Codable {
-    let width: Double
-    let height: Double
-}
-
 struct ClickRect: Codable {
     let x: Double
     let y: Double
@@ -23,10 +18,9 @@ struct Clickable: Codable {
     let disabled: Bool
 }
 
-struct PageSnapshot: Codable {
+struct ClickMap: Codable {
     let url: String
     let title: String
-    let viewport: Viewport
     let clickables: [Clickable]
 }
 
@@ -105,7 +99,6 @@ final class ClickMapService {
       const payload = {
         url: String(location.href || ''),
         title: String(document.title || ''),
-        viewport: { width: w, height: h },
         clickables
       };
 
@@ -113,11 +106,11 @@ final class ClickMapService {
     })();
     """
 
-    func extractSnapshot(webView: WKWebView) async throws -> PageSnapshot {
+    func extractClickMap(webView: WKWebView) async throws -> ClickMap {
         let result = try await webView.evalJS(extractJS)
         guard let json = result as? String else { throw ClickMapError.jsReturnedNil }
         guard let data = json.data(using: .utf8) else { throw ClickMapError.decodeFailed }
-        return try JSONDecoder().decode(PageSnapshot.self, from: data)
+        return try JSONDecoder().decode(ClickMap.self, from: data)
     }
 
     func click(id: String, webView: WKWebView) async throws {

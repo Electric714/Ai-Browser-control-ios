@@ -7,24 +7,53 @@ struct AgentPanelView: View {
         NavigationStack {
             VStack(spacing: 12) {
                 Form {
+                    Section("Enable") {
+                        Toggle("Enable AI click control", isOn: $controller.isAgentModeEnabled)
+                        Toggle("Allow sensitive clicks", isOn: $controller.allowSensitiveClicks)
+                    }
+
+                    Section("OpenRouter API Key") {
+                        SecureField("sk-or-…", text: $controller.apiKey)
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
+                        if controller.apiKey.isEmpty {
+                            Text("Add your OpenRouter API key to enable requests.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     Section("AI Command") {
                         TextField("Describe what to click", text: $controller.command, axis: .vertical)
                             .lineLimit(1...3)
                     }
 
-                    Section("AI Controls") {
+                    Section("Controls") {
                         HStack {
                             Button(controller.isRunning ? "Running..." : "Run") {
                                 controller.runCommand()
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(controller.isRunning)
+                            .disabled(isRunDisabled)
+
+                            Button("Stop") {
+                                controller.stop()
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(!controller.isRunning)
                         }
                     }
 
                     Section("Status") {
+                        Text("Web view available: \(controller.isWebViewAvailable ? "Yes" : "No")")
                         Text("Last extracted clickables count: \(controller.lastClickablesCount)")
-                        Text("Last executed action: \(controller.lastActionSummary ?? "None")")
+                        if let lastActionSummary = controller.lastActionSummary {
+                            Text("Last executed action: \(lastActionSummary)")
+                        }
+                        if let lastError = controller.lastError {
+                            Text(lastError)
+                                .foregroundStyle(.red)
+                        }
                     }
                 }
 
@@ -52,6 +81,18 @@ struct AgentPanelView: View {
             }
             .navigationTitle("AI Click Control")
         }
+    }
+
+    private var isRunDisabled: Bool {
+        controller.isRunning
+            || !controller.isAgentModeEnabled
+            || controller.apiKey.isEmpty
+            || isCommandEmpty
+            || !controller.isWebViewAvailable
+    }
+
+    private var isCommandEmpty: Bool {
+        controller.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 

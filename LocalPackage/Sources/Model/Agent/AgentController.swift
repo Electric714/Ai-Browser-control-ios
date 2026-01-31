@@ -46,6 +46,7 @@ public final class AgentController: ObservableObject {
 
     private let openRouterClient: OpenRouterClient
     private let clickMapService: ClickMapService
+    private let scrollService: ScrollService
     private let webViewRegistry: ActiveWebViewRegistry
     private var registryCancellable: AnyCancellable?
     private let keychainStore = KeychainStore()
@@ -78,6 +79,7 @@ public final class AgentController: ObservableObject {
     public init(command: String = "", isAgentModeEnabled: Bool = false, webViewRegistry: ActiveWebViewRegistry = .shared) {
         self.openRouterClient = OpenRouterClient()
         self.clickMapService = ClickMapService()
+        self.scrollService = ScrollService()
         self.webViewRegistry = webViewRegistry
         self.command = command
         self.isAgentModeEnabled = isAgentModeEnabled
@@ -172,17 +174,33 @@ public final class AgentController: ObservableObject {
                 appendLog(.init(date: Date(), kind: .warning, message: "No actions returned"))
                 return
             }
-            guard let clickable = clickMap.clickables.first(where: { $0.id == action.id }) else {
-                throw AgentError.missingClickable
-            }
-            if let blocked = blockedLabel(for: clickable.label) {
-                throw AgentError.blockedSensitiveAction(blocked)
-            }
+            switch action.type {
+            case .click:
+                guard let id = action.id else {
+                    throw AgentError.invalidResponse
+                }
+                guard let clickable = clickMap.clickables.first(where: { $0.id == id }) else {
+                    throw AgentError.missingClickable
+                }
+                if let blocked = blockedLabel(for: clickable.label) {
+                    throw AgentError.blockedSensitiveAction(blocked)
+                }
 
-            let refreshed = try await clickMapService.executeClick(id: action.id, webView: webView)
-            lastActionSummary = "clicked \(action.id): \"\(clickable.label)\""
-            appendLog(.init(date: Date(), kind: .action, message: "Clicked \(action.id)"))
-            lastClickablesCount = refreshed.clickables.count
+                let refreshed = try await clickMapService.executeClick(id: id, webView: webView)
+                lastActionSummary = "clicked \(id): \"\(clickable.label)\""
+                appendLog(.init(date: Date(), kind: .action, message: "Clicked \(id)"))
+                lastClickablesCount = refreshed.clickables.count
+            case .scroll:
+                guard let dy = action.dy else {
+                    throw AgentError.invalidResponse
+                }
+                _ = try await scrollService.scroll(dx: action.dx, dy: dy, selector: action.selector, mode: action.mode, webView: webView)
+                let refreshed = try await clickMapService.extractClickMap(webView: webView)
+                let dxSummary = action.dx.map { String(format: "%.0f", $0) } ?? "0"
+                lastActionSummary = "scrolled dx=\(dxSummary) dy=\(String(format: \"%.0f\", dy))"
+                appendLog(.init(date: Date(), kind: .action, message: "Scrolled dx=\(dxSummary) dy=\(String(format: \"%.0f\", dy))"))
+                lastClickablesCount = refreshed.clickables.count
+            }
         } catch AgentError.cancelled {
             appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))
         } catch let error as AgentParserError {

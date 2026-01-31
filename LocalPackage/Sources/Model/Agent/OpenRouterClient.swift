@@ -46,9 +46,10 @@ struct OpenRouterClient {
 
         let systemPrompt = """
         You are an automation planner. Return JSON only. No markdown. No extra text.
-        Choose exactly one best click action from the provided clickables unless none match.
+        You can click and scroll.
+        Choose exactly one best action (click or scroll) from the provided clickables unless none match.
         If none match return {"actions":[],"notes":"no match"}.
-        Output schema: {"actions":[{"type":"click","id":"e17"}],"notes":"optional"}
+        Output schema: {"actions":[{"type":"click","id":"e17"}],"notes":"optional"} or {"actions":[{"type":"scroll","dx":0,"dy":-240,"selector":".list","mode":"auto"}],"notes":"optional"}
         """
 
         let userPrompt = """

@@ -8,10 +8,21 @@ public struct ActionPlan: Codable, Sendable {
 public struct AgentAction: Codable, Equatable, Sendable {
     public enum ActionType: String, Codable, Sendable {
         case click
+        case scroll
     }
 
     public let type: ActionType
-    public let id: String
+    public let id: String?
+    public let dx: Double?
+    public let dy: Double?
+    public let selector: String?
+    public let mode: ScrollMode?
+
+    public enum ScrollMode: String, Codable, Sendable {
+        case window
+        case element
+        case auto
+    }
 }
 
 public struct AgentLogEntry: Identifiable, Sendable {

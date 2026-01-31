@@ -56,6 +56,7 @@ public final class AgentController: ObservableObject {
 
     private var webViewProxy: WebViewProxy?
     private var runTask: Task<Void, Never>?
+    private let maxActionsPerRun = 3
 
     @Published public var command: String
     @Published public var isAgentModeEnabled: Bool
@@ -330,8 +331,9 @@ public final class AgentController: ObservableObject {
             let size = webView.bounds.size
             let isLoading = webView.isLoading
             let readyState = try? await webView.evalJSString("document.readyState")
+            let isReady = readyState == nil || readyState == "complete" || readyState == "interactive"
 
-            if size != .zero, !isLoading, readyState == nil || readyState == "complete" || readyState == "interactive" {
+            if size != .zero, !isLoading, isReady {
                 return
             }
 
@@ -350,6 +352,30 @@ public final class AgentController: ObservableObject {
         }
     }
 
+    private func waitForPageReady(_ webView: WKWebView, timeout: Duration = .seconds(6)) async throws {
+        let interval: Duration = .milliseconds(200)
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+
+        while true {
+            if Task.isCancelled { throw AgentError.cancelled }
+
+            let isLoading = webView.isLoading
+            let readyState = try? await webView.evalJSString("document.readyState")
+            let isReady = readyState == nil || readyState == "complete" || readyState == "interactive"
+
+            if !isLoading, isReady {
+                return
+            }
+
+            if ContinuousClock.now >= deadline {
+                logWebViewState(prefix: "action readiness timeout", webView: webView)
+                throw AgentError.pageNotReady(webView.url)
+            }
+
+            try await Task.sleep(for: interval)
+        }
+    }
+
     private func logWebViewState(prefix: String, webView: WKWebView?) {
         let url = webView?.url?.absoluteString ?? "nil"
         let title = webView?.title ?? "nil"
@@ -357,6 +383,84 @@ public final class AgentController: ObservableObject {
         let bounds = webView?.bounds ?? .zero
         let identifier = webView.map { String(describing: ObjectIdentifier($0)) } ?? "nil"
         logger.debug("\(prefix, privacy: .public) id=\(identifier, privacy: .public) url=\(url, privacy: .public) title=\(title, privacy: .public) loading=\(isLoading) bounds=\(String(describing: bounds), privacy: .public)")
+    }
+
+    private func redactedKey(_ key: String) -> String {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 8 else { return "****" }
+        let prefix = trimmed.prefix(4)
+        let suffix = trimmed.suffix(4)
+        return "\(prefix)…\(suffix)"
+    }
+
+    private func executeActions(_ actions: [AgentAction], clickMap: PageSnapshot, webView: WKWebView) async throws -> [String] {
+        var summaries: [String] = []
+        var currentMap = clickMap
+
+        for action in actions.prefix(maxActionsPerRun) {
+            if Task.isCancelled { throw AgentError.cancelled }
+
+            switch action.type {
+            case .click:
+                guard let id = action.id else { throw AgentError.missingClickable }
+                guard let clickable = currentMap.clickables.first(where: { $0.id == id }) else {
+                    throw AgentError.missingClickable
+                }
+                if let blocked = blockedLabel(for: clickable.label) {
+                    throw AgentError.blockedSensitiveAction(blocked)
+                }
+                currentMap = try await clickMapService.executeClick(id: id, webView: webView)
+                summaries.append("clicked \(id): \"\(clickable.label)\"")
+                appendLog(.init(date: Date(), kind: .action, message: "Clicked \(id)"))
+                lastClickablesCount = currentMap.clickables.count
+                try await waitForPageReady(webView)
+            case .type:
+                let id = action.id
+                let selector = action.selector
+                let text = action.text ?? ""
+                try await clickMapService.typeText(id: id, selector: selector, text: text, webView: webView)
+                summaries.append("typed \"\(text)\"")
+                appendLog(.init(date: Date(), kind: .action, message: "Typed text (\(text.count) chars)"))
+                currentMap = try await clickMapService.extractClickMap(webView: webView)
+                lastClickablesCount = currentMap.clickables.count
+                try await waitForPageReady(webView)
+            case .scroll:
+                let direction = action.direction ?? .down
+                let amount = action.amount ?? 0
+                try await clickMapService.scroll(direction: direction, amount: amount, webView: webView)
+                summaries.append("scrolled \(direction.rawValue) \(amount)")
+                appendLog(.init(date: Date(), kind: .action, message: "Scrolled \(direction.rawValue) \(amount)"))
+                currentMap = try await clickMapService.extractClickMap(webView: webView)
+                lastClickablesCount = currentMap.clickables.count
+                try await waitForPageReady(webView)
+            case .wait:
+                let ms = action.ms ?? 0
+                appendLog(.init(date: Date(), kind: .action, message: "Waiting \(ms)ms"))
+                try await Task.sleep(for: .milliseconds(ms))
+                summaries.append("waited \(ms)ms")
+            case .navigate:
+                guard let urlString = action.url, let url = URL(string: urlString) else {
+                    throw AgentParserError.invalidAction("navigate missing url")
+                }
+                appendLog(.init(date: Date(), kind: .action, message: "Navigating to \(urlString)"))
+                await clickMapService.navigate(to: url, webView: webView)
+                try await waitForPageReady(webView, timeout: .seconds(10))
+                currentMap = try await clickMapService.extractClickMap(webView: webView)
+                lastClickablesCount = currentMap.clickables.count
+                summaries.append("navigated to \(urlString)")
+            case .ask_user:
+                let question = action.question ?? "Need clarification."
+                appendLog(.init(date: Date(), kind: .result, message: question))
+                summaries.append("asked user: \(question)")
+                return summaries
+            case .done:
+                let summary = action.summary ?? "Done."
+                appendLog(.init(date: Date(), kind: .result, message: summary))
+                summaries.append(summary)
+                return summaries
+            }
+        }
+        return summaries
     }
 
     private func handleError(_ error: Error) {

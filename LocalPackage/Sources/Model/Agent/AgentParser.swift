@@ -70,12 +70,15 @@ struct AgentParser {
         guard !trimmed.isEmpty else {
             throw AgentParserError.emptyResponse
         }
-        guard let data = trimmed.data(using: .utf8) else {
+
+        let jsonText = extractJSON(from: trimmed)
+        guard let data = jsonText.data(using: .utf8) else {
             throw AgentParserError.invalidJSON
         }
-        let rawPlan: RawActionPlan
+
+        let plan: ActionPlan
         do {
-            rawPlan = try JSONDecoder().decode(RawActionPlan.self, from: data)
+            plan = try JSONDecoder().decode(ActionPlan.self, from: data)
         } catch {
             throw AgentParserError.invalidJSON
         }
@@ -208,3 +211,4 @@ struct AgentParser {
     }
     #endif
 }
+#endif

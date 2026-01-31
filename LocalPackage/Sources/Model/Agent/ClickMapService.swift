@@ -35,8 +35,16 @@ enum ClickMapError: Error {
 final class ClickMapService {
     private let defaultSelector = "a[href],button,input[type=\"button\"],input[type=\"submit\"],[onclick],[role=\"button\"],[role=\"link\"]"
 
+    private func escapeJSString(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+    }
+
     private func extractJS(selector: String) -> String {
-        let escapedSelector = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedSelector = escapeJSString(selector)
         return #"""
         (function() {
           const selector = "\#(escapedSelector)";
@@ -159,7 +167,7 @@ final class ClickMapService {
     }
 
     func click(id: String, webView: WKWebView) async throws {
-        let safeId = id.replacingOccurrences(of: "\"", with: "\\\"")
+        let safeId = escapeJSString(id)
         let js = """
         (function(){
           const el = document.querySelector('[data-ai-id="\(safeId)"]');
@@ -228,7 +236,7 @@ final class ClickMapService {
     }
 
     func executeClick(id: String, webView: WKWebView, selector: String? = nil) async throws -> PageSnapshot {
-        let safeId = id.replacingOccurrences(of: "\"", with: "\\\"")
+        let safeId = escapeJSString(id)
         let js = """
         (function(){
           const el = document.querySelector('[data-ai-id="\(safeId)"]');
@@ -242,6 +250,49 @@ final class ClickMapService {
             throw ClickMapError.elementNotFound
         }
         return try await extractClickMap(webView: webView, selector: selector)
+    }
+
+    func typeText(id: String?, selector: String?, text: String, webView: WKWebView) async throws {
+        let safeId = escapeJSString(id ?? "")
+        let safeSelector = escapeJSString(selector ?? "")
+        let safeText = escapeJSString(text)
+        let js = """
+        (function(){
+          let el = null;
+          if ("\(safeId)".length > 0) {
+            el = document.querySelector('[data-ai-id="\(safeId)"]');
+          }
+          if (!el && "\(safeSelector)".length > 0) {
+            try { el = document.querySelector("\(safeSelector)"); } catch (e) {}
+          }
+          if (!el) return "NOT_FOUND";
+          el.focus();
+          el.value = "\(safeText)";
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return "OK";
+        })();
+        """
+        let result = try await webView.evalJSString(js)
+        if result == "NOT_FOUND" {
+            throw ClickMapError.elementNotFound
+        }
+    }
+
+    func scroll(direction: ScrollDirection, amount: Int, webView: WKWebView) async throws {
+        let delta = direction == .down ? amount : -amount
+        let js = """
+        (function(){
+          window.scrollBy(0, \(delta));
+          return "OK";
+        })();
+        """
+        _ = try await webView.evalJSString(js)
+    }
+
+    func navigate(to url: URL, webView: WKWebView) async {
+        let request = URLRequest(url: url)
+        webView.load(request)
     }
 }
 

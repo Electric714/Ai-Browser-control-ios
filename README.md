@@ -1,13 +1,14 @@
 # <img src="Resources/icon.png" alt="logo" width="30px" height="30px" /> Telescopure
 
-Telescopure is a browser for iOS which has minimal functions.<br>
+WiOS is a browser for iOS which has AI LLM function to control your bowser via api .<br>
 You can use Telescopure to debug your application that work with the browser.
 
-Download this app from App Store.<br>
-https://apps.apple.com/us/app/telescopure/id1643406104
+
+
 
 ## Functions
-
+- Open Router Ai Api compatible
+- sends a wuery to the llm to have the AI control the browser autonomiously
 - Settable as default browser.
 - Open an HTTP or HTTPS link.
 - Search by keywords.
@@ -22,14 +23,13 @@ https://apps.apple.com/us/app/telescopure/id1643406104
 ## Requirements
 
 - Written in Swift 6.2
-- Compatible with iOS 18.0+
-- Development with Xcode 26.0.1+
+- Compatible with iOS 26.2+
+- Development with Xcode 26.2
 
 ## Supported languages
 
 - English (primary)
-- Japanese
-- Korean
+
 
 ## Screenshots
 
@@ -49,7 +49,7 @@ https://apps.apple.com/us/app/telescopure/id1643406104
 
 ## Implementation
 
-- SwiftUI based App
+- SwiftUI based ai browser App
 - WKWebView wrapped in UIViewRepresentable
 - Share Extension
 
@@ -81,43 +81,3 @@ https://apps.apple.com/us/app/telescopure/id1643406104
 └── TelescopureUITests
     └── TelescopureUITests.swift
 ```
-
-## Default Browser
-
-Telescopure can be set as default browser app.
-
-[Apple - Preparing your app to be the default web browser](https://developer.apple.com/documentation/xcode/preparing-your-app-to-be-the-default-browser)
-
-## Debug Functions
-
-The following page can be used for debugging Telescopure.
-
-https://kyome.io/debug/index.html
-
-### JS Dialogs
-
-| Type    | Function           |
-| :------ | :----------------- |
-| Alert   | `window.alert()`   |
-| Confirm | `window.confirm()` |
-| Prompt  | `window.prompt()`  |
-
-### Custom Schemes
-
-| Type      | Scheme                              |
-| :-------- | :---------------------------------- |
-| SMS       | `sms://`                            |
-| Telephone | `tel://`                            |
-| FaceTime  | `facetime://` & `facetime-audio://` |
-| iMessage  | `imessage://`                       |
-| Mail      | `mailto://`                         |
-
-### Permissions
-
-| Category             | Permission                                                                                |
-| :------------------- | :---------------------------------------------------------------------------------------- |
-| Photo Library (Load) | `WKWebView` does not require permission to upload photos/videos.                          |
-| Photo Library (Save) | Privacy - Photo Library Additions Usage Description (`NSPhotoLibraryAddUsageDescription`) |
-| Device Location      | Privacy - Location When In Use Usage Description (`NSLocationWhenInUseUsageDescription`)  |
-| Camera               | Privacy - Camera Usage Description (`NSCameraUsageDescription`)                           |
-| Microphone           | Privacy - Microphone Usage Description (`NSMicrophoneUsageDescription`)                   |

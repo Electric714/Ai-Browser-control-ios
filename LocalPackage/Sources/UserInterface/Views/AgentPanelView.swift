@@ -23,8 +23,15 @@ struct AgentPanelView: View {
                     }
 
                     Section("Status") {
+                        Text("WebView ready: \(controller.isWebViewAvailable ? "Yes" : "No")")
                         Text("Last extracted clickables count: \(controller.lastClickablesCount)")
-                        Text("Last executed action: \(controller.lastActionSummary ?? "None")")
+                        if let lastActionSummary = controller.lastActionSummary, !lastActionSummary.isEmpty {
+                            Text("Last executed action: \(lastActionSummary)")
+                        }
+                        if let lastError = controller.lastError, !lastError.isEmpty {
+                            Text(lastError)
+                                .foregroundStyle(.red)
+                        }
                     }
                 }
 

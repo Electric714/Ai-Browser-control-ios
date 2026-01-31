@@ -14,7 +14,6 @@ public final class AgentController: ObservableObject {
         case webViewLoading(URL?)
         case pageNotReady(URL?)
         case invalidResponse
-        case invalidAction
         case missingClickable
         case blockedSensitiveAction(String)
         case cancelled
@@ -35,8 +34,6 @@ public final class AgentController: ObservableObject {
                 return "Cannot extract click map: the page did not finish loading in time (\(url?.absoluteString ?? "unknown URL"))."
             case .invalidResponse:
                 return "Model returned invalid JSON."
-            case .invalidAction:
-                return "Model returned an unsupported action."
             case .missingClickable:
                 return "Model chose a missing clickable element."
             case let .blockedSensitiveAction(label):
@@ -178,9 +175,6 @@ public final class AgentController: ObservableObject {
                 appendLog(.init(date: Date(), kind: .warning, message: "No actions returned"))
                 return
             }
-            guard action.type.lowercased() == "click" else {
-                throw AgentError.invalidAction
-            }
             guard let clickable = clickMap.clickables.first(where: { $0.id == action.id }) else {
                 throw AgentError.missingClickable
             }
@@ -196,11 +190,8 @@ public final class AgentController: ObservableObject {
             lastClickablesCount = refreshed.clickables.count
         } catch AgentError.cancelled {
             appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))
-        } catch let error as OpenRouterClient.OpenRouterClientError {
-            switch error {
-            case .invalidJSON, .emptyResponse:
-                handleError(AgentError.invalidResponse)
-            }
+        } catch let error as AgentParserError {
+            handleError(error)
         } catch let error as AgentError {
             handleError(error)
         } catch {

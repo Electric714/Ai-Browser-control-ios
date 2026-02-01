@@ -92,6 +92,7 @@ public final class AgentController: ObservableObject {
     @Published public var command: String
     @Published public var isAgentModeEnabled: Bool
     @Published public var allowSensitiveClicks: Bool
+    @Published public var provider: AgentProvider
     @Published public var isRunning: Bool
     @Published public var runMode: RunMode
     @Published public private(set) var logs: [AgentLogEntry]
@@ -139,6 +140,7 @@ public final class AgentController: ObservableObject {
         self.command = command
         self.isAgentModeEnabled = isAgentModeEnabled
         self.allowSensitiveClicks = false
+        self.provider = .openRouter
         self.isRunning = false
         self.runMode = .auto
         self.logs = []
@@ -556,7 +558,7 @@ public final class AgentController: ObservableObject {
         return summaries
     }
 
-    private func handleError(_ error: Error) {
+    private func handleError(_ error: any Error) {
         let message = (error as? AgentError)?.errorDescription ?? error.localizedDescription
         if !message.isEmpty {
             lastError = message

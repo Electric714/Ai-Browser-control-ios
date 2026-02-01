@@ -400,9 +400,8 @@ public final class AgentController: ObservableObject {
         for action in actions.prefix(maxActionsPerRun) {
             if Task.isCancelled { throw AgentError.cancelled }
 
-            switch action.type {
-            case .click:
-                guard let id = action.id else { throw AgentError.missingClickable }
+            switch action {
+            case let .click(id):
                 guard let clickable = currentMap.clickables.first(where: { $0.id == id }) else {
                     throw AgentError.missingClickable
                 }
@@ -414,32 +413,26 @@ public final class AgentController: ObservableObject {
                 appendLog(.init(date: Date(), kind: .action, message: "Clicked \(id)"))
                 lastClickablesCount = currentMap.clickables.count
                 try await waitForPageReady(webView)
-            case .type:
-                let id = action.id
-                let selector = action.selector
-                let text = action.text ?? ""
+            case let .type(id, selector, text):
                 try await clickMapService.typeText(id: id, selector: selector, text: text, webView: webView)
                 summaries.append("typed \"\(text)\"")
                 appendLog(.init(date: Date(), kind: .action, message: "Typed text (\(text.count) chars)"))
                 currentMap = try await clickMapService.extractClickMap(webView: webView)
                 lastClickablesCount = currentMap.clickables.count
                 try await waitForPageReady(webView)
-            case .scroll:
-                let direction = action.direction ?? .down
-                let amount = action.amount ?? 0
+            case let .scroll(direction, amount):
                 try await clickMapService.scroll(direction: direction, amount: amount, webView: webView)
                 summaries.append("scrolled \(direction.rawValue) \(amount)")
                 appendLog(.init(date: Date(), kind: .action, message: "Scrolled \(direction.rawValue) \(amount)"))
                 currentMap = try await clickMapService.extractClickMap(webView: webView)
                 lastClickablesCount = currentMap.clickables.count
                 try await waitForPageReady(webView)
-            case .wait:
-                let ms = action.ms ?? 0
+            case let .wait(ms):
                 appendLog(.init(date: Date(), kind: .action, message: "Waiting \(ms)ms"))
                 try await Task.sleep(for: .milliseconds(ms))
                 summaries.append("waited \(ms)ms")
-            case .navigate:
-                guard let urlString = action.url, let url = URL(string: urlString) else {
+            case let .navigate(urlString):
+                guard let url = URL(string: urlString) else {
                     throw AgentParserError.invalidAction("navigate missing url")
                 }
                 appendLog(.init(date: Date(), kind: .action, message: "Navigating to \(urlString)"))
@@ -448,13 +441,11 @@ public final class AgentController: ObservableObject {
                 currentMap = try await clickMapService.extractClickMap(webView: webView)
                 lastClickablesCount = currentMap.clickables.count
                 summaries.append("navigated to \(urlString)")
-            case .ask_user:
-                let question = action.question ?? "Need clarification."
+            case let .askUser(question):
                 appendLog(.init(date: Date(), kind: .result, message: question))
                 summaries.append("asked user: \(question)")
                 return summaries
-            case .done:
-                let summary = action.summary ?? "Done."
+            case let .done(summary):
                 appendLog(.init(date: Date(), kind: .result, message: summary))
                 summaries.append(summary)
                 return summaries

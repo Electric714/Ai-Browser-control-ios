@@ -6,6 +6,14 @@ import WebKit
 
 @MainActor
 public final class AgentController: ObservableObject {
+    enum RunMode: String, CaseIterable, Identifiable {
+        case step
+        case auto
+
+        var id: String { rawValue }
+        var label: String { rawValue.capitalized }
+    }
+
     private enum AgentError: LocalizedError {
         case missingAPIKey
         case missingWebView
@@ -16,6 +24,8 @@ public final class AgentController: ObservableObject {
         case invalidResponse
         case missingClickable
         case blockedSensitiveAction(String)
+        case stepLimitReached
+        case timeLimitReached
         case cancelled
 
         var errorDescription: String? {
@@ -38,6 +48,10 @@ public final class AgentController: ObservableObject {
                 return "Model chose a missing clickable element."
             case let .blockedSensitiveAction(label):
                 return "Blocked sensitive click for \"\(label)\". Enable sensitive clicks to continue."
+            case .stepLimitReached:
+                return "Stopped after reaching the maximum step limit."
+            case .timeLimitReached:
+                return "Stopped after reaching the maximum run duration."
             case .cancelled:
                 return nil
             }
@@ -50,18 +64,34 @@ public final class AgentController: ObservableObject {
     private let webViewRegistry: ActiveWebViewRegistry
     private var registryCancellable: AnyCancellable?
     private let keychainStore = KeychainStore()
+    private let userDefaults: UserDefaults
     private let logger = Logger(subsystem: "Agent", category: "ClickMap")
     private let sensitiveClickTerms = ["pay", "purchase", "checkout", "transfer", "send money"]
     private let maxActionsToExecute = 3
+    private let maxSteps = 30
+    private let maxRunDuration: Duration = .seconds(90)
+    private static let modelIdKey = "agent.openrouter.modelId"
+    private static let temperatureKey = "agent.openrouter.temperature"
+    static let defaultModelId = "openai/gpt-4o-mini"
+    static let availableModelIds = [
+        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
+        "anthropic/claude-3.7-sonnet",
+        "anthropic/claude-3.5-sonnet",
+        "google/gemini-1.5-pro"
+    ]
+    static let customModelTag = "other"
 
     private var webViewProxy: WebViewProxy?
     private var runTask: Task<Void, Never>?
+    private var actionQueue: [AgentAction] = []
     private let maxActionsPerRun = 3
 
     @Published public var command: String
     @Published public var isAgentModeEnabled: Bool
     @Published public var allowSensitiveClicks: Bool
     @Published public var isRunning: Bool
+    @Published public var runMode: RunMode
     @Published public private(set) var logs: [AgentLogEntry]
     @Published public private(set) var lastModelOutput: String?
     @Published public private(set) var lastActionSummary: String?
@@ -71,6 +101,26 @@ public final class AgentController: ObservableObject {
     @Published public private(set) var webViewBounds: CGRect?
     @Published public private(set) var webViewURL: String?
     @Published public private(set) var activeWebViewIdentifier: ObjectIdentifier?
+    @Published public var modelId: String {
+        didSet {
+            let trimmed = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed != modelId {
+                modelId = trimmed
+                return
+            }
+            userDefaults.set(trimmed, forKey: Self.modelIdKey)
+        }
+    }
+    @Published public var temperature: Double {
+        didSet {
+            let clamped = min(max(temperature, 0), 2)
+            if clamped != temperature {
+                temperature = clamped
+                return
+            }
+            userDefaults.set(clamped, forKey: Self.temperatureKey)
+        }
+    }
     @Published public var apiKey: String {
         didSet {
             _ = keychainStore.save(key: "openRouterAPIKey", value: apiKey)
@@ -82,16 +132,24 @@ public final class AgentController: ObservableObject {
         self.clickMapService = ClickMapService()
         self.scrollService = ScrollService()
         self.webViewRegistry = webViewRegistry
+        self.userDefaults = .standard
         self.command = command
         self.isAgentModeEnabled = isAgentModeEnabled
         self.allowSensitiveClicks = false
         self.isRunning = false
+        self.runMode = .auto
         self.logs = []
         self.lastModelOutput = nil
         self.lastActionSummary = nil
         self.lastClickablesCount = 0
         self.lastError = nil
         self.apiKey = keychainStore.load(key: "openRouterAPIKey") ?? ""
+        let storedModelId = userDefaults.string(forKey: Self.modelIdKey)
+        self.modelId = storedModelId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? storedModelId!
+            : Self.defaultModelId
+        let storedTemp = userDefaults.object(forKey: Self.temperatureKey) as? Double
+        self.temperature = storedTemp ?? 0
         self.isWebViewAvailable = false
         self.webViewBounds = nil
         self.webViewURL = nil
@@ -129,9 +187,16 @@ public final class AgentController: ObservableObject {
     }
 
     public func runCommand() {
+        runCommand(mode: nil)
+    }
+
+    public func runCommand(mode: RunMode?) {
         runTask?.cancel()
         lastError = nil
         lastActionSummary = nil
+        if let mode {
+            runMode = mode
+        }
         runTask = Task { [weak self] in
             await self?.executeCommand()
         }
@@ -141,6 +206,7 @@ public final class AgentController: ObservableObject {
         runTask?.cancel()
         runTask = nil
         isRunning = false
+        actionQueue.removeAll()
         appendLog(.init(date: Date(), kind: .info, message: "AI click control stopped"))
     }
 
@@ -167,50 +233,79 @@ public final class AgentController: ObservableObject {
         }
 
         isRunning = true
-        defer { isRunning = false }
+        defer {
+            isRunning = false
+            actionQueue.removeAll()
+        }
 
         var requestId: String?
         do {
             try await waitForWebViewReadiness(webView)
-            let clickMap = try await clickMapService.extractClickMap(webView: webView)
-            lastClickablesCount = clickMap.clickables.count
+            var snapshot = try await clickMapService.extractClickMap(webView: webView)
+            lastClickablesCount = snapshot.clickables.count
             try Task.checkCancellation()
 
-            let id = UUID().uuidString
-            requestId = id
-            let redactedKey = redact(apiKey: apiKey)
-            appendLog(.init(date: Date(), kind: .info, message: "Sending OpenRouter request id=\(id) key=\(redactedKey)"))
-            let payloadLog = openRouterClient.redactedPayloadString(instruction: command, clickMap: clickMap, allowSensitiveClicks: allowSensitiveClicks)
-            appendLog(.init(date: Date(), kind: .info, message: "Request payload (redacted): \(payloadLog)"))
+            let start = ContinuousClock.now
+            var steps = 0
 
-            let result = try await openRouterClient.generateActionPlan(
-                apiKey: apiKey,
-                instruction: command,
-                clickMap: clickMap,
-                allowSensitiveClicks: allowSensitiveClicks,
-                requestId: id
-            )
-            lastModelOutput = result.rawText
-            appendLog(.init(date: Date(), kind: .model, message: result.rawText))
-            appendLog(.init(
-                date: Date(),
-                kind: .info,
-                message: "OpenRouter response id=\(result.metadata.requestId) status=\(result.metadata.statusCode) bytes=\(result.metadata.responseBytes) latency=\(result.metadata.latencyMs)ms"
-            ))
-            try Task.checkCancellation()
+            while true {
+                if Task.isCancelled { throw AgentError.cancelled }
+                if steps >= maxSteps { throw AgentError.stepLimitReached }
+                let elapsed = start.duration(to: ContinuousClock.now)
+                if elapsed >= maxRunDuration { throw AgentError.timeLimitReached }
 
-            if let error = result.plan.error, !error.isEmpty {
-                lastError = error
-                appendLog(.init(date: Date(), kind: .error, message: error))
-                return
-            }
+                if actionQueue.isEmpty {
+                    let id = UUID().uuidString
+                    requestId = id
+                    let redactedKey = redact(apiKey: apiKey)
+                    appendLog(.init(date: Date(), kind: .info, message: "Sending OpenRouter request id=\(id) key=\(redactedKey)"))
+                    let payloadLog = openRouterClient.redactedPayloadString(
+                        instruction: command,
+                        clickMap: snapshot,
+                        allowSensitiveClicks: allowSensitiveClicks,
+                        modelId: modelId,
+                        temperature: temperature
+                    )
+                    appendLog(.init(date: Date(), kind: .info, message: "Request payload (redacted): \(payloadLog)"))
 
-            var snapshot = clickMap
-            let actions = Array(result.plan.actions.prefix(maxActionsToExecute))
-            appendLog(.init(date: Date(), kind: .info, message: "Parsed \(actions.count) action(s)"))
-            for action in actions {
-                try Task.checkCancellation()
+                    let result = try await openRouterClient.generateActionPlan(
+                        apiKey: apiKey,
+                        instruction: command,
+                        clickMap: snapshot,
+                        allowSensitiveClicks: allowSensitiveClicks,
+                        modelId: modelId,
+                        temperature: temperature,
+                        requestId: id
+                    )
+                    lastModelOutput = result.rawText
+                    appendLog(.init(date: Date(), kind: .model, message: result.rawText))
+                    appendLog(.init(
+                        date: Date(),
+                        kind: .info,
+                        message: "OpenRouter response id=\(result.metadata.requestId) status=\(result.metadata.statusCode) bytes=\(result.metadata.responseBytes) latency=\(result.metadata.latencyMs)ms"
+                    ))
+                    try Task.checkCancellation()
+
+                    if let error = result.plan.error, !error.isEmpty {
+                        lastError = error
+                        appendLog(.init(date: Date(), kind: .error, message: error))
+                        return
+                    }
+
+                    actionQueue = Array(result.plan.actions.prefix(maxActionsToExecute))
+                    appendLog(.init(date: Date(), kind: .info, message: "Parsed \(actionQueue.count) action(s)"))
+                    if actionQueue.isEmpty {
+                        appendLog(.init(date: Date(), kind: .warning, message: "No actions returned"))
+                        return
+                    }
+                }
+
+                let action = actionQueue.removeFirst()
                 if try await handleAction(action, webView: webView, snapshot: &snapshot) == false {
+                    return
+                }
+                steps += 1
+                if runMode == .step {
                     return
                 }
             }

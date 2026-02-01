@@ -34,6 +34,27 @@ struct AgentPanelView: View {
                             .focused($isCommandFocused)
                     }
 
+                    Section("Model Settings") {
+                        Picker("Model", selection: modelSelection) {
+                            ForEach(AgentController.availableModelIds, id: \.self) { modelId in
+                                Text(modelId).tag(modelId)
+                            }
+                            Text("Other…").tag(AgentController.customModelTag)
+                        }
+                        if modelSelection.wrappedValue == AgentController.customModelTag {
+                            TextField("Custom model id", text: $controller.modelId)
+                                .textInputAutocapitalization(.never)
+                                .disableAutocorrection(true)
+                        }
+                        HStack {
+                            Text("Temperature")
+                            Spacer()
+                            Text(String(format: "%.2f", controller.temperature))
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $controller.temperature, in: 0...2, step: 0.05)
+                    }
+
                     Section("Controls") {
                         HStack {
                             Button(controller.isRunning ? "Running..." : "Run") {
@@ -48,6 +69,15 @@ struct AgentPanelView: View {
                             .buttonStyle(.bordered)
                             .disabled(!controller.isRunning)
                         }
+                        Picker("Run Mode", selection: $controller.runMode) {
+                            ForEach(AgentController.RunMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        Text("Active model: \(resolvedModelId)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
 
                     Section("Status") {
@@ -77,7 +107,7 @@ struct AgentPanelView: View {
                             .font(.headline)
                         Spacer()
                         if !controller.logs.isEmpty {
-                            Button("Copy") {
+                            Button("Copy Log") {
                                 copyLogEntries(controller.logs)
                             }
                         }
@@ -90,7 +120,15 @@ struct AgentPanelView: View {
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
                         .padding(.bottom, 8)
                     if let last = controller.lastModelOutput, !last.isEmpty {
-                        Text("Last model output: \n\(last)")
+                        HStack {
+                            Text("Last model output")
+                                .font(.headline)
+                            Spacer()
+                            Button("Copy Output") {
+                                copyOutput(last)
+                            }
+                        }
+                        Text(last)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -153,6 +191,36 @@ struct AgentPanelView: View {
         #if canImport(UIKit)
         UIPasteboard.general.string = text
         #endif
+    }
+
+    private func copyOutput(_ output: String) {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = output
+        #endif
+    }
+
+    private var modelSelection: Binding<String> {
+        Binding(
+            get: {
+                AgentController.availableModelIds.contains(controller.modelId)
+                    ? controller.modelId
+                    : AgentController.customModelTag
+            },
+            set: { selection in
+                if selection == AgentController.customModelTag {
+                    if AgentController.availableModelIds.contains(controller.modelId) {
+                        controller.modelId = ""
+                    }
+                } else {
+                    controller.modelId = selection
+                }
+            }
+        )
+    }
+
+    private var resolvedModelId: String {
+        let trimmed = controller.modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? AgentController.defaultModelId : trimmed
     }
 }
 

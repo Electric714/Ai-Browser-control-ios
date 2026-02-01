@@ -128,7 +128,7 @@ struct BrowserView: View {
                     updateActiveWebView(proxy: proxy)
                 }
 
-            CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
+            CommandOverlayView(controller: agentController, isCommandFocused: commandFocusBinding)
                 .padding(.horizontal, 12)
                 .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
         }
@@ -160,6 +160,36 @@ struct BrowserView: View {
             }
             .padding(20)
             .transition(.move(edge: .bottom))
+        }
+    }
+
+    private var commandFocusBinding: Binding<Bool> {
+        Binding(
+            get: { isCommandFocused },
+            set: { isCommandFocused = $0 }
+        )
+    }
+
+    private var mainContent: some View {
+        ZStack(alignment: .bottomTrailing) {
+            WebViewReader { proxy in
+                ZStack(alignment: .bottomTrailing) {
+                    webContainer(proxy: proxy)
+                    if !store.isPresentedToolbar {
+                        floatingControls
+                    }
+                }
+            }
+        }
+    }
+
+    private func updateActiveWebView(proxy: WebViewProxy) {
+        webViewRegistry.update(from: proxy)
+        agentController.attach(proxy: proxy)
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            webViewRegistry.update(from: proxy)
+            agentController.attach(proxy: proxy)
         }
     }
 }

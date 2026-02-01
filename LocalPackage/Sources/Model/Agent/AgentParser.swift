@@ -181,6 +181,35 @@ struct AgentParser {
         return trimmed
     }
 
+    private func extractJSON(from text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.first == "{", trimmed.last == "}" {
+            return trimmed
+        }
+
+        guard let startIndex = trimmed.firstIndex(of: "{") else {
+            return trimmed
+        }
+
+        var depth = 0
+        var index = startIndex
+        while index < trimmed.endIndex {
+            let char = trimmed[index]
+            if char == "{" {
+                depth += 1
+            } else if char == "}" {
+                depth -= 1
+                if depth == 0 {
+                    let endIndex = trimmed.index(after: index)
+                    return String(trimmed[startIndex..<endIndex])
+                }
+            }
+            index = trimmed.index(after: index)
+        }
+
+        return trimmed
+    }
+
     #if DEBUG
     static let sampleResponseJSON = """
     {"actions":[{"type":"click","id":"e1"}],"notes":"example"}

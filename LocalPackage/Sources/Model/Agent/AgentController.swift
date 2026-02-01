@@ -433,7 +433,7 @@ public final class AgentController: ObservableObject {
                 summaries.append("waited \(ms)ms")
             case let .navigate(urlString):
                 guard let url = URL(string: urlString) else {
-                    throw AgentParserError.invalidAction("navigate missing url")
+                    throw AgentParserError.invalidURL
                 }
                 appendLog(.init(date: Date(), kind: .action, message: "Navigating to \(urlString)"))
                 await clickMapService.navigate(to: url, webView: webView)

@@ -86,7 +86,7 @@ struct OpenRouterClient {
         Click map JSON: \(clickMapText)
         """
 
-        return RequestPayload(
+        let payload = RequestPayload(
             model: model,
             messages: [
                 Message(role: "system", content: systemPrompt),
@@ -95,7 +95,6 @@ struct OpenRouterClient {
             temperature: 0,
             responseFormat: ResponseFormat(type: "json_object")
         )
-    }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

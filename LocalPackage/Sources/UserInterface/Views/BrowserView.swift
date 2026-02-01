@@ -128,7 +128,7 @@ struct BrowserView: View {
                     updateActiveWebView(proxy: proxy)
                 }
 
-            CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
+            CommandOverlayView(controller: agentController, isCommandFocused: commandFocusBinding)
                 .padding(.horizontal, 12)
                 .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
         }
@@ -161,6 +161,13 @@ struct BrowserView: View {
             .padding(20)
             .transition(.move(edge: .bottom))
         }
+    }
+
+    private var commandFocusBinding: Binding<Bool> {
+        Binding(
+            get: { isCommandFocused },
+            set: { isCommandFocused = $0 }
+        )
     }
 }
 
@@ -316,7 +323,7 @@ private extension BrowserView {
     }
 
     var commandOverlay: some View {
-        CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
+        CommandOverlayView(controller: agentController, isCommandFocused: commandFocusBinding)
             .padding(.horizontal, 12)
             .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
     }

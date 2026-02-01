@@ -104,6 +104,12 @@ public final class AgentController: ObservableObject {
     @Published public private(set) var webViewBounds: CGRect?
     @Published public private(set) var webViewURL: String?
     @Published public private(set) var activeWebViewIdentifier: ObjectIdentifier?
+    @Published public var openRouterModel: String {
+        didSet {
+            guard openRouterModel != modelId else { return }
+            modelId = openRouterModel
+        }
+    }
     @Published public var modelId: String {
         didSet {
             let trimmed = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -112,6 +118,9 @@ public final class AgentController: ObservableObject {
                 return
             }
             userDefaults.set(trimmed, forKey: Self.modelIdKey)
+            if openRouterModel != modelId {
+                openRouterModel = modelId
+            }
         }
     }
     @Published public var temperature: Double {
@@ -153,6 +162,7 @@ public final class AgentController: ObservableObject {
         self.modelId = storedModelId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? storedModelId!
             : Self.defaultModelId
+        self.openRouterModel = self.modelId
         let storedTemp = userDefaults.object(forKey: Self.temperatureKey) as? Double
         self.temperature = storedTemp ?? 0
         self.isWebViewAvailable = false

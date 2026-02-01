@@ -167,7 +167,7 @@ struct OpenRouterClient {
                 role: clickable.role,
                 label: truncate(clickable.label),
                 rect: clickable.rect,
-                href: clickable.href.map(truncate),
+                href: clickable.href.map { truncate($0) },
                 tag: clickable.tag,
                 disabled: clickable.disabled
             )

@@ -76,9 +76,9 @@ struct AgentParser {
             throw AgentParserError.invalidJSON
         }
 
-        let plan: ActionPlan
+        let rawPlan: RawActionPlan
         do {
-            plan = try JSONDecoder().decode(ActionPlan.self, from: data)
+            rawPlan = try JSONDecoder().decode(RawActionPlan.self, from: data)
         } catch {
             throw AgentParserError.invalidJSON
         }
@@ -211,4 +211,3 @@ struct AgentParser {
     }
     #endif
 }
-#endif

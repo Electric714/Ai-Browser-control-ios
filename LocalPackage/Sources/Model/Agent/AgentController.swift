@@ -11,8 +11,8 @@ public final class AgentController: ObservableObject {
         case step
         case auto
 
-        var id: String { rawValue }
-        var label: String { rawValue.capitalized }
+        public var id: String { rawValue }
+        public var label: String { rawValue.capitalized }
     }
 
     private enum AgentError: LocalizedError {

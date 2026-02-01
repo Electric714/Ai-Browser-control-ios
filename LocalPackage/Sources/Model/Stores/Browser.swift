@@ -297,7 +297,18 @@ import WebUI
     private func loadErrorPage(with error: any Error) async {
         guard let fileURL = eventBridge?.getResourceURL?("error", "html"),
               var htmlString = try? String(contentsOf: fileURL, encoding: .utf8) else {
-            fatalError("Could not load error.html")
+            assertionFailure("Could not load error.html")
+            let fallbackHTML = """
+            <html>
+              <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+              <body style="font-family: -apple-system; padding: 16px;">
+                <h2>Page Load Error</h2>
+                <p>\(error.localizedDescription)</p>
+              </body>
+            </html>
+            """
+            await webViewProxyClient.loadHTMLString(fallbackHTML, URL(string: inputText))
+            return
         }
         if let urlError = error as? URLError {
             htmlString = htmlString.replacingOccurrences(of: String.errorMessage, with: urlError.localizedDescription)

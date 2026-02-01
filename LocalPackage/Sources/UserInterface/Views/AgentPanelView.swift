@@ -46,7 +46,7 @@ struct AgentPanelView: View {
                         }
 
                         GroupBox("OpenRouter Model") {
-                            Picker("Model", selection: $controller.openRouterModel) {
+                            Picker("Model", selection: $controller.modelId) {
                                 ForEach(openRouterModels, id: \.self) { model in
                                     Text(model).tag(model)
                                 }
@@ -54,11 +54,11 @@ struct AgentPanelView: View {
                             HStack {
                                 Text("Temperature")
                                 Spacer()
-                                Text(String(format: "%.2f", controller.openRouterTemperature))
+                                Text(String(format: "%.2f", controller.temperature))
                                     .monospacedDigit()
                                     .foregroundStyle(.secondary)
                             }
-                            Slider(value: $controller.openRouterTemperature, in: 0...1, step: 0.05)
+                            Slider(value: $controller.temperature, in: 0...2, step: 0.05)
                         }
                     }
 

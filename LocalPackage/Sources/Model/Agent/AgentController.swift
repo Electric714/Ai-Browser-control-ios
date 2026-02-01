@@ -74,15 +74,15 @@ public final class AgentController: ObservableObject {
     private let maxRunDuration: Duration = .seconds(90)
     private static let modelIdKey = "agent.openrouter.modelId"
     private static let temperatureKey = "agent.openrouter.temperature"
-    static let defaultModelId = "openai/gpt-4o-mini"
-    static let availableModelIds = [
+    public static let defaultModelId = "openai/gpt-4o-mini"
+    public static let availableModelIds = [
         "openai/gpt-4o-mini",
         "openai/gpt-4o",
         "anthropic/claude-3.7-sonnet",
         "anthropic/claude-3.5-sonnet",
         "google/gemini-1.5-pro"
     ]
-    static let customModelTag = "other"
+    public static let customModelTag = "other"
 
     private var webViewProxy: WebViewProxy?
     private var runTask: Task<Void, Never>?

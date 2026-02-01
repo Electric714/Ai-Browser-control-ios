@@ -20,15 +20,6 @@ struct LicensesView: View {
     }
 
     private func loadLicensesText() -> String {
-        guard let url = Bundle.module.url(forResource: "ThirdPartyNotices", withExtension: "txt"),
-              let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else {
-            return ""
-        }
-        return text
-    }
-
-    private func loadLicensesText() -> String {
         guard let url = Bundle.module.url(forResource: "Licenses", withExtension: "md"),
               let text = try? String(contentsOf: url, encoding: .utf8) else {
             assertionFailure("Missing Licenses.md in UserInterface resources.")

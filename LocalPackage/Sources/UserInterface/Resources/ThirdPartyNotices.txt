@@ -1,0 +1,5 @@
+Third-Party Notices
+
+This app includes third-party software components. License texts are provided below.
+
+- License information will be updated here.

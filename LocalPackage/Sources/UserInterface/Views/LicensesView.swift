@@ -7,18 +7,25 @@ struct LicensesView: View {
 
     var body: some View {
         ScrollView {
-            Text(licensesText)
-                .textSelection(.enabled)
+            Text(licensesText.isEmpty ? "Third-party license information is unavailable." : licensesText)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding()
         }
-            .navigationTitle(Text("licenses", bundle: .module))
-            .navigationBarTitleDisplayMode(.inline)
-            .task {
-                await store.send(.task(String(describing: Self.self)))
-                licensesText = loadLicensesText()
-            }
+        .navigationTitle(Text("licenses", bundle: .module))
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await store.send(.task(String(describing: Self.self)))
+            licensesText = loadLicensesText()
+        }
+    }
+
+    private func loadLicensesText() -> String {
+        guard let url = Bundle.module.url(forResource: "ThirdPartyNotices", withExtension: "txt"),
+              let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8) else {
+            return ""
+        }
+        return text
     }
 
     private func loadLicensesText() -> String {

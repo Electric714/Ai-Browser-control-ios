@@ -200,7 +200,7 @@ extension BrowserUI: ObservableObject {}
 
 private struct CommandOverlayView: View {
     @ObservedObject var controller: AgentController
-    @Binding var isCommandFocused: Bool
+    @FocusState.Binding var isCommandFocused: Bool
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
@@ -263,6 +263,102 @@ private struct CommandOverlayView: View {
             || controller.apiKey.isEmpty
             || controller.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !controller.isWebViewAvailable
+    }
+}
+
+private extension BrowserView {
+    var mainContent: some View {
+        ZStack(alignment: .bottomTrailing) {
+            WebViewReader { proxy in
+                ZStack(alignment: .bottomTrailing) {
+                    browserStack(proxy: proxy)
+                    if !store.isPresentedToolbar {
+                        floatingControls
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    func browserStack(proxy: WebViewProxy) -> some View {
+        VStack(spacing: 0) {
+            if store.isPresentedToolbar {
+                header(proxy: proxy)
+            }
+            ZStack(alignment: .bottom) {
+                webView(proxy: proxy)
+                commandOverlay
+            }
+            if store.isPresentedToolbar {
+                footer(proxy: proxy)
+            }
+        }
+        .background(Color(.secondarySystemBackground))
+        .simultaneousGesture(TapGesture().onEnded {
+            isCommandFocused = false
+        })
+        .task {
+            updateActiveWebView(proxy: proxy)
+            await store.send(.task(
+                String(describing: Self.self),
+                .init(getResourceURL: { Bundle.module.url(forResource: $0, withExtension: $1) }),
+                proxy
+            ))
+        }
+        .onChange(of: proxy.url) { _, newValue in
+            updateActiveWebView(proxy: proxy)
+            Task {
+                await store.send(.onChangeURL(newValue))
+            }
+        }
+        .onChange(of: proxy.title) { _, newValue in
+            Task {
+                await store.send(.onChangeTitle(newValue))
+            }
+        }
+    }
+
+    func header(proxy: WebViewProxy) -> some View {
+        Header(store: store, openAgentPanel: { isPresentingAgentPanel = true })
+            .transition(.move(edge: .top))
+            .environment(\.isLoading, proxy.isLoading)
+            .environment(\.estimatedProgress, proxy.estimatedProgress)
+    }
+
+    func webView(proxy: WebViewProxy) -> some View {
+        WebView(configuration: .forTelescopure)
+            .navigationDelegate(store.navigationDelegate)
+            .uiDelegate(store.uiDelegate)
+            .refreshable()
+            .allowsBackForwardNavigationGestures(true)
+            .allowsOpaqueDrawing(proxy.url != nil)
+            .allowsInspectable(true)
+            .pageScaleFactor(store.pageScale.value)
+            .overlay {
+                if proxy.url == nil {
+                    LogoView()
+                }
+            }
+            .onAppear {
+                updateActiveWebView(proxy: proxy)
+            }
+    }
+
+    var commandOverlay: some View {
+        CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
+            .padding(.horizontal, 12)
+            .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
+    }
+
+    func updateActiveWebView(proxy: WebViewProxy) {
+        webViewRegistry.update(from: proxy)
+        agentController.attach(proxy: proxy)
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            webViewRegistry.update(from: proxy)
+            agentController.attach(proxy: proxy)
+        }
     }
 }
 

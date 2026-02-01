@@ -7,7 +7,7 @@ import WebKit
 
 @MainActor
 public final class AgentController: ObservableObject {
-    enum RunMode: String, CaseIterable, Identifiable {
+    public enum RunMode: String, CaseIterable, Identifiable {
         case step
         case auto
 

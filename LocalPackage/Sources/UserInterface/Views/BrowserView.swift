@@ -65,6 +65,103 @@ struct BrowserView: View {
             }
             .animation(.easeIn(duration: 0.2), value: store.isPresentedToolbar)
     }
+
+    @ViewBuilder
+    private func webContainer(proxy: WebViewProxy) -> some View {
+        VStack(spacing: 0) {
+            toolbar(proxy: proxy)
+            webContent(proxy: proxy)
+            footer(proxy: proxy)
+        }
+        .background(Color(.secondarySystemBackground))
+        .simultaneousGesture(TapGesture().onEnded {
+            isCommandFocused = false
+        })
+        .task {
+            updateActiveWebView(proxy: proxy)
+            await store.send(.task(
+                String(describing: Self.self),
+                .init(getResourceURL: { Bundle.module.url(forResource: $0, withExtension: $1) }),
+                proxy
+            ))
+        }
+        .onChange(of: proxy.url) { _, newValue in
+            updateActiveWebView(proxy: proxy)
+            Task {
+                await store.send(.onChangeURL(newValue))
+            }
+        }
+        .onChange(of: proxy.title) { _, newValue in
+            Task {
+                await store.send(.onChangeTitle(newValue))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func toolbar(proxy: WebViewProxy) -> some View {
+        if store.isPresentedToolbar {
+            Header(store: store, openAgentPanel: { isPresentingAgentPanel = true })
+                .transition(.move(edge: .top))
+                .environment(\.isLoading, proxy.isLoading)
+                .environment(\.estimatedProgress, proxy.estimatedProgress)
+        }
+    }
+
+    @ViewBuilder
+    private func webContent(proxy: WebViewProxy) -> some View {
+        ZStack(alignment: .bottom) {
+            WebView(configuration: .forTelescopure)
+                .navigationDelegate(store.navigationDelegate)
+                .uiDelegate(store.uiDelegate)
+                .refreshable()
+                .allowsBackForwardNavigationGestures(true)
+                .allowsOpaqueDrawing(proxy.url != nil)
+                .allowsInspectable(true)
+                .pageScaleFactor(store.pageScale.value)
+                .overlay {
+                    if proxy.url == nil {
+                        LogoView()
+                    }
+                }
+                .onAppear {
+                    updateActiveWebView(proxy: proxy)
+                }
+
+            CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
+                .padding(.horizontal, 12)
+                .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
+        }
+    }
+
+    @ViewBuilder
+    private func footer(proxy: WebViewProxy) -> some View {
+        if store.isPresentedToolbar {
+            Footer(store: store)
+                .transition(.move(edge: .bottom))
+                .environment(\.canGoBack, proxy.canGoBack)
+                .environment(\.canGoForward, proxy.canGoForward)
+        }
+    }
+
+    @ViewBuilder
+    private var floatingControls: some View {
+        if !store.isPresentedToolbar {
+            VStack(spacing: 12) {
+                Button {
+                    isPresentingAgentPanel = true
+                } label: {
+                    Image(systemName: "sparkles")
+                        .padding(14)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                ShowToolbarButton(store: store)
+            }
+            .padding(20)
+            .transition(.move(edge: .bottom))
+        }
+    }
 }
 
 extension Browser: ObservableObject {}

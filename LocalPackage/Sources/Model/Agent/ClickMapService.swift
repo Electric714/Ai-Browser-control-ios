@@ -1,4 +1,5 @@
 import Foundation
+import os
 import WebKit
 
 struct ClickRect: Codable, Sendable {
@@ -33,7 +34,8 @@ enum ClickMapError: Error {
 
 @MainActor
 final class ClickMapService {
-    private let defaultSelector = "a[href],button,input[type=\"button\"],input[type=\"submit\"],[onclick],[role=\"button\"],[role=\"link\"]"
+    private let defaultSelector = "a[href],button,input,textarea,[contenteditable],[onclick],[role=\"button\"],[role=\"link\"]"
+    private let logger = Logger(subsystem: "Agent", category: "ClickMap")
 
     private func escapeJSString(_ value: String) -> String {
         value
@@ -55,6 +57,20 @@ final class ClickMapService {
           function labelFor(el) {
             const aria = el.getAttribute('aria-label');
             if (aria && aria.trim()) return aria.trim();
+            const labelledBy = el.getAttribute('aria-labelledby');
+            if (labelledBy && labelledBy.trim()) {
+              const labelEl = document.getElementById(labelledBy.trim());
+              const labelText = labelEl ? (labelEl.innerText || '').trim() : '';
+              if (labelText) return labelText;
+            }
+            if (el.labels && el.labels.length) {
+              const labelText = Array.from(el.labels).map(l => (l.innerText || '').trim()).filter(Boolean).join(' ');
+              if (labelText) return labelText;
+            }
+            const placeholder = (el.getAttribute('placeholder') || '').trim();
+            if (placeholder) return placeholder;
+            const name = (el.getAttribute('name') || '').trim();
+            if (name) return name;
             const txt = (el.innerText || '').trim();
             if (txt) return txt;
             const val = (el.value || '').trim();
@@ -114,6 +130,15 @@ final class ClickMapService {
             if (!isVisible(el, r)) continue;
             if (!isInteractable(el)) continue;
 
+            const tag = (el.tagName || '').toUpperCase();
+            const typeAttr = (el.getAttribute('type') || '').toLowerCase();
+            if (tag === 'INPUT' && (typeAttr === 'hidden' || typeAttr === 'password')) {
+              continue;
+            }
+            if (el.hasAttribute('contenteditable') && el.getAttribute('contenteditable') === 'false') {
+              continue;
+            }
+
             if (!el.dataset.aiId) {
               do {
                 maxId += 1;
@@ -123,9 +148,11 @@ final class ClickMapService {
               usedIds.add(newId);
             }
 
-            const tag = (el.tagName || '').toUpperCase();
             const roleAttr = (el.getAttribute('role') || '').toLowerCase();
-            const role = roleAttr || (tag === 'A' ? 'link' : (tag === 'BUTTON' ? 'button' : (tag === 'INPUT' ? 'input' : 'other')));
+            const role = roleAttr || (el.isContentEditable ? 'contenteditable'
+              : (tag === 'TEXTAREA' ? 'textarea'
+                : (tag === 'INPUT' && !['button','submit','reset','checkbox','radio','file','range','color','image'].includes(typeAttr) ? 'textbox'
+                  : (tag === 'A' ? 'link' : (tag === 'BUTTON' ? 'button' : (tag === 'INPUT' && ['button','submit','reset','image'].includes(typeAttr) ? 'button' : (tag === 'INPUT' ? 'input' : 'other'))))));
             const disabled = !!(el.disabled || el.getAttribute('aria-disabled') === 'true');
             const href = (el.getAttribute('href') || '').trim() || null;
             const label = labelFor(el);
@@ -163,7 +190,16 @@ final class ClickMapService {
         let js = extractJS(selector: selector ?? defaultSelector)
         let json = try await webView.evalJSString(js)
         guard let data = json.data(using: .utf8) else { throw ClickMapError.decodeFailed }
-        return try JSONDecoder().decode(PageSnapshot.self, from: data)
+        let snapshot = try JSONDecoder().decode(PageSnapshot.self, from: data)
+        #if DEBUG
+        let typeableRoles: Set<String> = ["textbox", "input", "textarea", "contenteditable"]
+        let typeables = snapshot.clickables.filter { typeableRoles.contains($0.role) }
+        if !typeables.isEmpty {
+            let samples = typeables.prefix(3).map { "\($0.id)=\($0.label)" }.joined(separator: ", ")
+            logger.debug("Click map typeables=\(typeables.count, privacy: .public) samples=\(samples, privacy: .public)")
+        }
+        #endif
+        return snapshot
     }
 
     func click(id: String, webView: WKWebView) async throws {
@@ -225,7 +261,11 @@ final class ClickMapService {
           }
           if (!el) return "NOT_FOUND";
           el.focus();
-          el.value = "\(safeText)";
+          if (el.isContentEditable) {
+            el.textContent = "\(safeText)";
+          } else if ('value' in el) {
+            el.value = "\(safeText)";
+          }
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
           return "OK";

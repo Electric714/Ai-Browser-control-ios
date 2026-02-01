@@ -45,8 +45,11 @@ struct AgentPanelView: View {
                     }
 
                     Section("Status") {
+                        let status = runBlockers.isEmpty
+                            ? "Ready"
+                            : "Blocked by: \(runBlockers.joined(separator: ", "))"
                         Text("WebView ready: \(controller.isWebViewAvailable ? "Yes" : "No")")
-                        Text("Run status: \(runBlockers.isEmpty ? "Ready" : "Blocked by: \(runBlockers.joined(separator: \", \"))")")
+                        Text("Run status: \(status)")
                         Text("Active WebView id: \(activeWebViewIdentifierDescription)")
                         Text("WebView bounds: \(webViewBoundsDescription)")
                         Text("WebView URL: \(controller.webViewURL ?? "nil")")

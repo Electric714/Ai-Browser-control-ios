@@ -182,48 +182,6 @@ final class ClickMapService {
         }
     }
 
-    func typeText(id: String?, selector: String?, text: String, webView: WKWebView) async throws {
-        let safeId = id?.replacingOccurrences(of: "\"", with: "\\\"")
-        let safeSelector = selector?.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let safeText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let js = """
-        (function(){
-          let el = null;
-          if ("\(safeId ?? "")") {
-            el = document.querySelector('[data-ai-id="\(safeId ?? "")"]');
-          }
-          if (!el && "\(safeSelector ?? "")") {
-            el = document.querySelector("\(safeSelector ?? "")");
-          }
-          if (!el) return "NOT_FOUND";
-          el.focus();
-          if ('value' in el) {
-            el.value = "\(safeText)";
-          }
-          const inputEvent = new Event('input', { bubbles: true });
-          const changeEvent = new Event('change', { bubbles: true });
-          el.dispatchEvent(inputEvent);
-          el.dispatchEvent(changeEvent);
-          return "OK";
-        })();
-        """
-        let result = try await webView.evalJSString(js)
-        if result == "NOT_FOUND" {
-            throw ClickMapError.elementNotFound
-        }
-    }
-
-    func scroll(direction: ScrollDirection, amount: Int, webView: WKWebView) async throws {
-        let delta = direction == .down ? amount : -amount
-        let js = """
-        (function(){
-          window.scrollBy(0, \(delta));
-          return "OK";
-        })();
-        """
-        _ = try await webView.evalJSString(js)
-    }
-
     func navigate(url: String, webView: WKWebView) async throws {
         let safeUrl = url.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let js = """

@@ -1,4 +1,5 @@
 import Combine
+import DataSource
 import Foundation
 import os
 import WebUI
@@ -45,11 +46,13 @@ public final class AgentController: ObservableObject {
     }
 
     private let openRouterClient: OpenRouterClient
+    private let foundationModelsClient: FoundationModelsClient
     private let clickMapService: ClickMapService
     private let scrollService: ScrollService
     private let webViewRegistry: ActiveWebViewRegistry
     private var registryCancellable: AnyCancellable?
     private let keychainStore = KeychainStore()
+    private let userDefaultsRepository: UserDefaultsRepository
     private let logger = Logger(subsystem: "Agent", category: "ClickMap")
     private let sensitiveClickTerms = ["pay", "purchase", "checkout", "transfer", "send money"]
     private let maxActionsToExecute = 3
@@ -62,6 +65,21 @@ public final class AgentController: ObservableObject {
     @Published public var isAgentModeEnabled: Bool
     @Published public var allowSensitiveClicks: Bool
     @Published public var isRunning: Bool
+    @Published public var provider: AgentProvider {
+        didSet {
+            userDefaultsRepository.agentProvider = provider.rawValue
+        }
+    }
+    @Published public var openRouterModel: String {
+        didSet {
+            userDefaultsRepository.openRouterModel = openRouterModel
+        }
+    }
+    @Published public var openRouterTemperature: Double {
+        didSet {
+            userDefaultsRepository.openRouterTemperature = openRouterTemperature
+        }
+    }
     @Published public private(set) var logs: [AgentLogEntry]
     @Published public private(set) var lastModelOutput: String?
     @Published public private(set) var lastActionSummary: String?
@@ -79,13 +97,23 @@ public final class AgentController: ObservableObject {
 
     public init(command: String = "", isAgentModeEnabled: Bool = false, webViewRegistry: ActiveWebViewRegistry = .shared) {
         self.openRouterClient = OpenRouterClient()
+        self.foundationModelsClient = FoundationModelsClient()
         self.clickMapService = ClickMapService()
         self.scrollService = ScrollService()
         self.webViewRegistry = webViewRegistry
+        self.userDefaultsRepository = UserDefaultsRepository(.liveValue)
         self.command = command
         self.isAgentModeEnabled = isAgentModeEnabled
         self.allowSensitiveClicks = false
         self.isRunning = false
+        if let storedProvider = userDefaultsRepository.agentProvider,
+           let provider = AgentProvider(rawValue: storedProvider) {
+            self.provider = provider
+        } else {
+            self.provider = .openRouter
+        }
+        self.openRouterModel = userDefaultsRepository.openRouterModel ?? OpenRouterClient.defaultModel
+        self.openRouterTemperature = userDefaultsRepository.openRouterTemperature ?? 0
         self.logs = []
         self.lastModelOutput = nil
         self.lastActionSummary = nil
@@ -123,6 +151,10 @@ public final class AgentController: ObservableObject {
         }
     }
 
+    public var onDeviceAvailabilityMessage: String? {
+        foundationModelsClient.availabilityMessage()
+    }
+
     public func toggleAgentMode(_ enabled: Bool) {
         isAgentModeEnabled = enabled
         appendLog(.init(date: Date(), kind: .info, message: "AI click control \(enabled ? "enabled" : "disabled")"))
@@ -157,7 +189,7 @@ public final class AgentController: ObservableObject {
             appendLog(.init(date: Date(), kind: .warning, message: "Web view is not ready"))
             return
         }
-        guard !apiKey.isEmpty else {
+        if provider == .openRouter, apiKey.isEmpty {
             handleError(AgentError.missingAPIKey)
             return
         }
@@ -176,18 +208,70 @@ public final class AgentController: ObservableObject {
             lastClickablesCount = clickMap.clickables.count
             try Task.checkCancellation()
 
+            if provider == .onDevice {
+                do {
+                    let result = try await foundationModelsClient.generateActionPlan(
+                        instruction: command,
+                        clickMap: clickMap,
+                        allowSensitiveClicks: allowSensitiveClicks
+                    )
+                    lastModelOutput = result.rawText
+                    appendLog(.init(date: Date(), kind: .model, message: result.rawText))
+                    appendLog(.init(date: Date(), kind: .info, message: "On-device response generated"))
+                    try Task.checkCancellation()
+
+                    if let error = result.plan.error, !error.isEmpty {
+                        lastError = error
+                        appendLog(.init(date: Date(), kind: .error, message: error))
+                        return
+                    }
+
+                    var snapshot = clickMap
+                    let actions = Array(result.plan.actions.prefix(maxActionsToExecute))
+                    appendLog(.init(date: Date(), kind: .info, message: "Parsed \(actions.count) action(s)"))
+                    for action in actions {
+                        try Task.checkCancellation()
+                        if try await handleAction(action, webView: webView, snapshot: &snapshot) == false {
+                            return
+                        }
+                    }
+                    return
+                } catch AgentError.cancelled {
+                    appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))
+                    return
+                } catch is CancellationError {
+                    appendLog(.init(date: Date(), kind: .warning, message: "Cancelled"))
+                    return
+                } catch {
+                    appendLog(.init(date: Date(), kind: .error, message: "On-device model failed: \(error.localizedDescription). Falling back to OpenRouter."))
+                }
+            }
+
             let id = UUID().uuidString
             requestId = id
             let redactedKey = redact(apiKey: apiKey)
-            appendLog(.init(date: Date(), kind: .info, message: "Sending OpenRouter request id=\(id) key=\(redactedKey)"))
-            let payloadLog = openRouterClient.redactedPayloadString(instruction: command, clickMap: clickMap, allowSensitiveClicks: allowSensitiveClicks)
+            appendLog(.init(date: Date(), kind: .info, message: "Sending OpenRouter request id=\(id) key=\(redactedKey) model=\(openRouterModel) temp=\(String(format: "%.2f", openRouterTemperature))"))
+            let payloadLog = openRouterClient.redactedPayloadString(
+                instruction: command,
+                clickMap: clickMap,
+                allowSensitiveClicks: allowSensitiveClicks,
+                model: openRouterModel,
+                temperature: openRouterTemperature
+            )
             appendLog(.init(date: Date(), kind: .info, message: "Request payload (redacted): \(payloadLog)"))
+
+            if apiKey.isEmpty {
+                handleError(AgentError.missingAPIKey)
+                return
+            }
 
             let result = try await openRouterClient.generateActionPlan(
                 apiKey: apiKey,
                 instruction: command,
                 clickMap: clickMap,
                 allowSensitiveClicks: allowSensitiveClicks,
+                model: openRouterModel,
+                temperature: openRouterTemperature,
                 requestId: id
             )
             lastModelOutput = result.rawText

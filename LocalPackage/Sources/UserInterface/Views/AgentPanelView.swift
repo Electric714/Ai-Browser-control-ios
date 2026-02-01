@@ -6,38 +6,82 @@ import UIKit
 
 struct AgentPanelView: View {
     @ObservedObject var controller: AgentController
+    var onRun: (() -> Void)?
     @FocusState private var isCommandFocused: Bool
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                Form {
-                    Section("Enable") {
+            ScrollView {
+                VStack(spacing: 16) {
+                    GroupBox("Enable") {
                         Toggle("Enable AI click control", isOn: $controller.isAgentModeEnabled)
                         Toggle("Allow sensitive clicks", isOn: $controller.allowSensitiveClicks)
                     }
 
-                    Section("OpenRouter API Key") {
-                        SecureField("sk-or-…", text: $controller.apiKey)
-                            .textInputAutocapitalization(.never)
-                            .disableAutocorrection(true)
-                        if controller.apiKey.isEmpty {
-                            Text("Add your OpenRouter API key to enable requests.")
+                    GroupBox("Provider") {
+                        Picker("Provider", selection: $controller.provider) {
+                            ForEach(AgentProvider.allCases) { provider in
+                                Text(provider.displayName).tag(provider)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        if controller.provider == .onDevice,
+                           let message = controller.onDeviceAvailabilityMessage {
+                            Text(message)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
                     }
 
-                    Section("AI Command") {
-                        TextField("Describe what to click", text: $controller.command, axis: .vertical)
-                            .lineLimit(1...3)
-                            .focused($isCommandFocused)
+                    if controller.provider == .openRouter {
+                        GroupBox("OpenRouter API Key") {
+                            SecureField("sk-or-…", text: $controller.apiKey)
+                                .textInputAutocapitalization(.never)
+                                .disableAutocorrection(true)
+                            if controller.apiKey.isEmpty {
+                                Text("Add your OpenRouter API key to enable requests.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        GroupBox("OpenRouter Model") {
+                            Picker("Model", selection: $controller.openRouterModel) {
+                                ForEach(openRouterModels, id: \.self) { model in
+                                    Text(model).tag(model)
+                                }
+                            }
+                            HStack {
+                                Text("Temperature")
+                                Spacer()
+                                Text(String(format: "%.2f", controller.openRouterTemperature))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
+                            Slider(value: $controller.openRouterTemperature, in: 0...1, step: 0.05)
+                        }
                     }
 
-                    Section("Controls") {
+                    GroupBox("AI Command") {
+                        ZStack(alignment: .topLeading) {
+                            if controller.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text("Describe what to click")
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 8)
+                                    .padding(.leading, 5)
+                            }
+                            TextEditor(text: $controller.command)
+                                .focused($isCommandFocused)
+                                .frame(minHeight: 120, maxHeight: 160)
+                        }
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
+                    }
+
+                    GroupBox("Controls") {
                         HStack {
                             Button(controller.isRunning ? "Running..." : "Run") {
                                 controller.runCommand()
+                                onRun?()
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(isRunDisabled)
@@ -50,7 +94,7 @@ struct AgentPanelView: View {
                         }
                     }
 
-                    Section("Status") {
+                    GroupBox("Status") {
                         let status = runBlockers.isEmpty
                             ? "Ready"
                             : "Blocked by: \(runBlockers.joined(separator: ", "))"
@@ -68,36 +112,42 @@ struct AgentPanelView: View {
                                 .foregroundStyle(.red)
                         }
                     }
-                }
-                .scrollDismissesKeyboard(.interactively)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Live Log")
-                            .font(.headline)
-                        Spacer()
-                        if !controller.logs.isEmpty {
-                            Button("Copy") {
-                                copyLogEntries(controller.logs)
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Live Log")
+                                    .font(.headline)
+                                Spacer()
+                                if !controller.logs.isEmpty {
+                                    Button("Copy") {
+                                        copyLogEntries(controller.logs)
+                                    }
+                                }
+                                if controller.isRunning {
+                                    ProgressView()
+                                }
+                            }
+                            LogListView(entries: controller.logs)
+                                .frame(maxWidth: .infinity)
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
+                                .padding(.bottom, 8)
+                            if let last = controller.lastModelOutput, !last.isEmpty {
+                                Text("Last model output: \n\(last)")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
                             }
                         }
-                        if controller.isRunning {
-                            ProgressView()
-                        }
-                    }
-                    LogListView(entries: controller.logs)
-                        .frame(maxWidth: .infinity)
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
-                        .padding(.bottom, 8)
-                    if let last = controller.lastModelOutput, !last.isEmpty {
-                        Text("Last model output: \n\(last)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
                     }
                 }
-                .padding(.horizontal)
+                .padding()
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isCommandFocused = false
             }
             .navigationTitle("AI Click Control")
             .toolbar {
@@ -108,13 +158,20 @@ struct AgentPanelView: View {
                     }
                 }
             }
+            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
+
+    private let openRouterModels = [
+        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
+        "anthropic/claude-3.5-sonnet"
+    ]
 
     private var isRunDisabled: Bool {
         controller.isRunning
             || !controller.isAgentModeEnabled
-            || controller.apiKey.isEmpty
+            || (controller.provider == .openRouter && controller.apiKey.isEmpty)
             || isCommandEmpty
             || !controller.isWebViewAvailable
     }
@@ -127,7 +184,7 @@ struct AgentPanelView: View {
         var blockers: [String] = []
         if controller.isRunning { blockers.append("running") }
         if !controller.isAgentModeEnabled { blockers.append("agent disabled") }
-        if controller.apiKey.isEmpty { blockers.append("missing api key") }
+        if controller.provider == .openRouter, controller.apiKey.isEmpty { blockers.append("missing api key") }
         if isCommandEmpty { blockers.append("empty command") }
         if !controller.isWebViewAvailable { blockers.append("webView unavailable") }
         return blockers

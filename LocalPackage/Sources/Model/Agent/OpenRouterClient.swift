@@ -47,12 +47,12 @@ struct OpenRouterClient {
         let metadata: ResponseMetadata
     }
 
-    let urlSession: URLSession
-    let model: String
+    static let defaultModel = "openai/gpt-4o-mini"
 
-    init(urlSession: URLSession = .shared, model: String = "openai/gpt-4o-mini") {
+    let urlSession: URLSession
+
+    init(urlSession: URLSession = .shared) {
         self.urlSession = urlSession
-        self.model = model
     }
 
     func generateActionPlan(
@@ -60,6 +60,8 @@ struct OpenRouterClient {
         instruction: String,
         clickMap: PageSnapshot,
         allowSensitiveClicks: Bool,
+        model: String,
+        temperature: Double,
         requestId: String
     ) async throws -> Result {
         guard let url = URL(string: "https://openrouter.ai/api/v1/chat/completions") else {
@@ -93,7 +95,7 @@ struct OpenRouterClient {
                 Message(role: "system", content: systemPrompt),
                 Message(role: "user", content: userPrompt)
             ],
-            temperature: 0,
+            temperature: temperature,
             responseFormat: ResponseFormat(type: "json_object")
         )
 
@@ -123,7 +125,13 @@ struct OpenRouterClient {
         return Result(rawText: text, plan: plan, metadata: metadata)
     }
 
-    func redactedPayloadString(instruction: String, clickMap: PageSnapshot, allowSensitiveClicks: Bool) -> String {
+    func redactedPayloadString(
+        instruction: String,
+        clickMap: PageSnapshot,
+        allowSensitiveClicks: Bool,
+        model: String,
+        temperature: Double
+    ) -> String {
         let redactedClickMap = truncateClickMap(clickMap, maxItems: 25)
         let clickMapText = (try? encodeClickMap(redactedClickMap)) ?? "{}"
         let systemPrompt = """
@@ -148,7 +156,7 @@ struct OpenRouterClient {
                 Message(role: "system", content: systemPrompt),
                 Message(role: "user", content: userPrompt)
             ],
-            temperature: 0,
+            temperature: temperature,
             responseFormat: ResponseFormat(type: "json_object")
         )
         let encoder = JSONEncoder()

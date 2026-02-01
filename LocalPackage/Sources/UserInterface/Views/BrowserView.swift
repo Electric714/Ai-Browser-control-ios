@@ -7,6 +7,7 @@ struct BrowserView: View {
     @StateObject private var webViewRegistry: ActiveWebViewRegistry
     @StateObject private var agentController: AgentController
     @State private var isPresentingAgentPanel = false
+    @State private var agentPanelDetent: PresentationDetent = .fraction(0.45)
 
     init(store: Browser) {
         _store = StateObject(wrappedValue: store)
@@ -91,10 +92,12 @@ struct BrowserView: View {
             SettingsView(store: store)
         }
         .sheet(isPresented: $isPresentingAgentPanel) {
-            AgentPanelView(controller: agentController)
-                .presentationDetents([.medium, .large])
+            AgentPanelView(controller: agentController, onRun: {
+                agentPanelDetent = .fraction(0.20)
+            })
+                .presentationDetents([.fraction(0.20), .fraction(0.45), .large], selection: $agentPanelDetent)
                 .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled)
+                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.20)))
         }
         .sheet(item: $store.bookmarkManagement) { store in
             BookmarkManagementView(store: store)

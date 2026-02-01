@@ -47,6 +47,8 @@ struct OpenRouterClient {
         let metadata: ResponseMetadata
     }
 
+    static let defaultModel = "openai/gpt-4o-mini"
+
     let urlSession: URLSession
     let defaultModel: String
 

@@ -24,6 +24,21 @@ public struct UserDefaultsRepository: Sendable {
         }
     }
 
+    public var agentProvider: String? {
+        get { userDefaultsClient.string(.agentProvider) }
+        nonmutating set { userDefaultsClient.setString(newValue, .agentProvider) }
+    }
+
+    public var openRouterModel: String? {
+        get { userDefaultsClient.string(.openRouterModel) }
+        nonmutating set { userDefaultsClient.setString(newValue, .openRouterModel) }
+    }
+
+    public var openRouterTemperature: Double? {
+        get { userDefaultsClient.double(.openRouterTemperature) }
+        nonmutating set { userDefaultsClient.setDouble(newValue, .openRouterTemperature) }
+    }
+
     public init(_ userDefaultsClient: UserDefaultsClient) {
         self.userDefaultsClient = userDefaultsClient
 

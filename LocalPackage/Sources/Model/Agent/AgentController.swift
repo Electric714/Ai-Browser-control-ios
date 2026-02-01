@@ -1,4 +1,5 @@
 import Combine
+import DataSource
 import Foundation
 import os
 import WebUI
@@ -59,6 +60,7 @@ public final class AgentController: ObservableObject {
     }
 
     private let openRouterClient: OpenRouterClient
+    private let foundationModelsClient: FoundationModelsClient
     private let clickMapService: ClickMapService
     private let scrollService: ScrollService
     private let webViewRegistry: ActiveWebViewRegistry
@@ -129,6 +131,7 @@ public final class AgentController: ObservableObject {
 
     public init(command: String = "", isAgentModeEnabled: Bool = false, webViewRegistry: ActiveWebViewRegistry = .shared) {
         self.openRouterClient = OpenRouterClient()
+        self.foundationModelsClient = FoundationModelsClient()
         self.clickMapService = ClickMapService()
         self.scrollService = ScrollService()
         self.webViewRegistry = webViewRegistry
@@ -181,6 +184,10 @@ public final class AgentController: ObservableObject {
         }
     }
 
+    public var onDeviceAvailabilityMessage: String? {
+        foundationModelsClient.availabilityMessage()
+    }
+
     public func toggleAgentMode(_ enabled: Bool) {
         isAgentModeEnabled = enabled
         appendLog(.init(date: Date(), kind: .info, message: "AI click control \(enabled ? "enabled" : "disabled")"))
@@ -223,7 +230,7 @@ public final class AgentController: ObservableObject {
             appendLog(.init(date: Date(), kind: .warning, message: "Web view is not ready"))
             return
         }
-        guard !apiKey.isEmpty else {
+        if provider == .openRouter, apiKey.isEmpty {
             handleError(AgentError.missingAPIKey)
             return
         }

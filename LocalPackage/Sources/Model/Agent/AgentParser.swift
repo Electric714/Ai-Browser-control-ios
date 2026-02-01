@@ -209,7 +209,7 @@ struct AgentParser {
         return trimmed
     }
 
-    #if DEBUG
+#if DEBUG
     static let sampleResponseJSON = """
     {"actions":[{"type":"click","id":"e1"}],"notes":"example"}
     """
@@ -237,5 +237,5 @@ struct AgentParser {
             return false
         }
     }
-    #endif
+#endif
 }

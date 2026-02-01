@@ -17,130 +17,53 @@ struct BrowserView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            WebViewReader { proxy in
-                VStack(spacing: 0) {
-                    if store.isPresentedToolbar {
-                        Header(store: store, openAgentPanel: { isPresentingAgentPanel = true })
-                            .transition(.move(edge: .top))
-                            .environment(\.isLoading, proxy.isLoading)
-                            .environment(\.estimatedProgress, proxy.estimatedProgress)
+        mainContent
+            .ignoresSafeArea(.container, edges: store.isPresentedToolbar ? [] : .all)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+            .sheet(item: $store.settings) { store in
+                SettingsView(store: store)
+            }
+            .sheet(isPresented: $isPresentingAgentPanel) {
+                AgentPanelView(controller: agentController)
+                    .presentationDetents([.fraction(0.35), .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
+            }
+            .sheet(item: $store.bookmarkManagement) { store in
+                BookmarkManagementView(store: store)
+            }
+            .webDialog(
+                isPresented: $store.isPresentedWebDialog,
+                presenting: store.webDialog,
+                promptInput: $store.promptInput,
+                okButtonTapped: { await store.send(.dialogOKButtonTapped) },
+                cancelButtonTapped: { await store.send(.dialogCancelButtonTapped) },
+                onChangeIsPresented: { await store.send(.onChangeIsPresentedWebDialog($0)) }
+            )
+            .externalAppConfirmationDialog(
+                isPresented: $store.isPresentedConfirmationDialog,
+                presenting: store.customSchemeURL,
+                okButtonTapped: { await store.send(.confirmButtonTapped($0)) }
+            )
+            .alert(
+                Text("failedToOpenExternalApp", bundle: .module),
+                isPresented: $store.isPresentedAlert,
+                actions: {}
+            )
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        isCommandFocused = false
                     }
-                    ZStack(alignment: .bottom) {
-                        WebView(configuration: .forTelescopure)
-                            .navigationDelegate(store.navigationDelegate)
-                            .uiDelegate(store.uiDelegate)
-                            .refreshable()
-                            .allowsBackForwardNavigationGestures(true)
-                            .allowsOpaqueDrawing(proxy.url != nil)
-                            .allowsInspectable(true)
-                            .pageScaleFactor(store.pageScale.value)
-                            .overlay {
-                                if proxy.url == nil {
-                                    LogoView()
-                                }
-                            }
-                            .onAppear {
-                                updateActiveWebView(proxy: proxy)
-                            }
-
-                        CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
-                    }
-                    if store.isPresentedToolbar {
-                        Footer(store: store)
-                            .transition(.move(edge: .bottom))
-                            .environment(\.canGoBack, proxy.canGoBack)
-                            .environment(\.canGoForward, proxy.canGoForward)
-                    }
-                }
-                .background(Color(.secondarySystemBackground))
-                .simultaneousGesture(TapGesture().onEnded {
-                    isCommandFocused = false
-                })
-                .task {
-                    updateActiveWebView(proxy: proxy)
-                    await store.send(.task(
-                        String(describing: Self.self),
-                        .init(getResourceURL: { Bundle.module.url(forResource: $0, withExtension: $1) }),
-                        proxy
-                    ))
-                }
-                .onChange(of: proxy.url) { _, newValue in
-                    updateActiveWebView(proxy: proxy)
-                    Task {
-                        await store.send(.onChangeURL(newValue))
-                    }
-                }
-                .onChange(of: proxy.title) { _, newValue in
-                    Task {
-                        await store.send(.onChangeTitle(newValue))
-                    }
-                }
-                if !store.isPresentedToolbar {
-                    VStack(spacing: 12) {
-                        Button {
-                            isPresentingAgentPanel = true
-                        } label: {
-                            Image(systemName: "sparkles")
-                                .padding(14)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                        }
-                        ShowToolbarButton(store: store)
-                    }
-                    .padding(20)
-                    .transition(.move(edge: .bottom))
                 }
             }
-        }
-        .ignoresSafeArea(.container, edges: store.isPresentedToolbar ? [] : .all)
-        .ignoresSafeArea(.keyboard, edges: .bottom)
-        .sheet(item: $store.settings) { store in
-            SettingsView(store: store)
-        }
-        .sheet(isPresented: $isPresentingAgentPanel) {
-            AgentPanelView(controller: agentController)
-                .presentationDetents([.fraction(0.35), .large])
-                .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
-        }
-        .sheet(item: $store.bookmarkManagement) { store in
-            BookmarkManagementView(store: store)
-        }
-        .webDialog(
-            isPresented: $store.isPresentedWebDialog,
-            presenting: store.webDialog,
-            promptInput: $store.promptInput,
-            okButtonTapped: { await store.send(.dialogOKButtonTapped) },
-            cancelButtonTapped: { await store.send(.dialogCancelButtonTapped) },
-            onChangeIsPresented: { await store.send(.onChangeIsPresentedWebDialog($0)) }
-        )
-        .externalAppConfirmationDialog(
-            isPresented: $store.isPresentedConfirmationDialog,
-            presenting: store.customSchemeURL,
-            okButtonTapped: { await store.send(.confirmButtonTapped($0)) }
-        )
-        .alert(
-            Text("failedToOpenExternalApp", bundle: .module),
-            isPresented: $store.isPresentedAlert,
-            actions: {}
-        )
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    isCommandFocused = false
+            .onOpenURL { url in
+                Task {
+                    await store.send(.onOpenURL(url))
                 }
             }
-        }
-        .onOpenURL { url in
-            Task {
-                await store.send(.onOpenURL(url))
-            }
-        }
-        .animation(.easeIn(duration: 0.2), value: store.isPresentedToolbar)
+            .animation(.easeIn(duration: 0.2), value: store.isPresentedToolbar)
     }
 }
 
@@ -217,6 +140,113 @@ private struct CommandOverlayView: View {
 }
 
 private extension BrowserView {
+    var mainContent: some View {
+        ZStack(alignment: .bottomTrailing) {
+            WebViewReader { proxy in
+                ZStack(alignment: .bottomTrailing) {
+                    browserStack(proxy: proxy)
+                    if !store.isPresentedToolbar {
+                        floatingControls
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    func browserStack(proxy: WebViewProxy) -> some View {
+        VStack(spacing: 0) {
+            if store.isPresentedToolbar {
+                header(proxy: proxy)
+            }
+            ZStack(alignment: .bottom) {
+                webView(proxy: proxy)
+                commandOverlay
+            }
+            if store.isPresentedToolbar {
+                footer(proxy: proxy)
+            }
+        }
+        .background(Color(.secondarySystemBackground))
+        .simultaneousGesture(TapGesture().onEnded {
+            isCommandFocused = false
+        })
+        .task {
+            updateActiveWebView(proxy: proxy)
+            await store.send(.task(
+                String(describing: Self.self),
+                .init(getResourceURL: { Bundle.module.url(forResource: $0, withExtension: $1) }),
+                proxy
+            ))
+        }
+        .onChange(of: proxy.url) { _, newValue in
+            updateActiveWebView(proxy: proxy)
+            Task {
+                await store.send(.onChangeURL(newValue))
+            }
+        }
+        .onChange(of: proxy.title) { _, newValue in
+            Task {
+                await store.send(.onChangeTitle(newValue))
+            }
+        }
+    }
+
+    func header(proxy: WebViewProxy) -> some View {
+        Header(store: store, openAgentPanel: { isPresentingAgentPanel = true })
+            .transition(.move(edge: .top))
+            .environment(\.isLoading, proxy.isLoading)
+            .environment(\.estimatedProgress, proxy.estimatedProgress)
+    }
+
+    func webView(proxy: WebViewProxy) -> some View {
+        WebView(configuration: .forTelescopure)
+            .navigationDelegate(store.navigationDelegate)
+            .uiDelegate(store.uiDelegate)
+            .refreshable()
+            .allowsBackForwardNavigationGestures(true)
+            .allowsOpaqueDrawing(proxy.url != nil)
+            .allowsInspectable(true)
+            .pageScaleFactor(store.pageScale.value)
+            .overlay {
+                if proxy.url == nil {
+                    LogoView()
+                }
+            }
+            .onAppear {
+                updateActiveWebView(proxy: proxy)
+            }
+    }
+
+    var commandOverlay: some View {
+        CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
+            .padding(.horizontal, 12)
+            .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
+    }
+
+    func footer(proxy: WebViewProxy) -> some View {
+        Footer(store: store)
+            .transition(.move(edge: .bottom))
+            .environment(\.canGoBack, proxy.canGoBack)
+            .environment(\.canGoForward, proxy.canGoForward)
+    }
+
+    var floatingControls: some View {
+        VStack(spacing: 12) {
+            Button {
+                isPresentingAgentPanel = true
+            } label: {
+                Image(systemName: "sparkles")
+                    .padding(14)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+            ShowToolbarButton(store: store)
+        }
+        .padding(20)
+        .transition(.move(edge: .bottom))
+    }
+
     func updateActiveWebView(proxy: WebViewProxy) {
         webViewRegistry.update(from: proxy)
         agentController.attach(proxy: proxy)

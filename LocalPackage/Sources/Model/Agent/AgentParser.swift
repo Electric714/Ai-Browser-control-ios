@@ -131,10 +131,9 @@ struct AgentParser {
                     throw AgentParserError.invalidScrollDirection
                 }
             case "wait":
-                guard let ms = rawAction.ms, (50...15000).contains(ms) else {
-                    throw AgentParserError.invalidWaitDuration
-                }
-                return .wait(ms: ms)
+                let ms = rawAction.ms ?? 1000
+                let clamped = min(max(ms, 50), 15000)
+                return .wait(ms: clamped)
             case "navigate":
                 guard let url = rawAction.url?.trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty else {
                     throw AgentParserError.invalidURL

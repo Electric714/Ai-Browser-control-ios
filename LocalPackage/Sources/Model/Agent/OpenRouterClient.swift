@@ -75,6 +75,7 @@ struct OpenRouterClient {
         Output one of:
         {"actions":[...]} or {"error":"..."}.
         Allowed actions: click, type, scroll, wait, navigate, ask_user, done.
+        For wait use {"type":"wait","ms":<integer 50..15000>} only; never use seconds or strings.
         Ask for clarification with {"actions":[{"type":"ask_user","question":"..."}]} when uncertain.
         Never click pay/checkout/confirm purchase unless allowSensitiveClicks is true.
         """
@@ -131,6 +132,7 @@ struct OpenRouterClient {
         Output one of:
         {"actions":[...]} or {"error":"..."}.
         Allowed actions: click, type, scroll, wait, navigate, ask_user, done.
+        For wait use {"type":"wait","ms":<integer 50..15000>} only; never use seconds or strings.
         Ask for clarification with {"actions":[{"type":"ask_user","question":"..."}]} when uncertain.
         Never click pay/checkout/confirm purchase unless allowSensitiveClicks is true.
         """

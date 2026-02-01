@@ -92,6 +92,9 @@ struct BrowserView: View {
         }
         .sheet(isPresented: $isPresentingAgentPanel) {
             AgentPanelView(controller: agentController)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled)
         }
         .sheet(item: $store.bookmarkManagement) { store in
             BookmarkManagementView(store: store)

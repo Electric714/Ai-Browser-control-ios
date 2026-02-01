@@ -1,8 +1,13 @@
 import Model
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct AgentPanelView: View {
     @ObservedObject var controller: AgentController
+    @FocusState private var isCommandFocused: Bool
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
@@ -26,6 +31,7 @@ struct AgentPanelView: View {
                     Section("AI Command") {
                         TextField("Describe what to click", text: $controller.command, axis: .vertical)
                             .lineLimit(1...3)
+                            .focused($isCommandFocused)
                     }
 
                     Section("Controls") {
@@ -63,12 +69,18 @@ struct AgentPanelView: View {
                         }
                     }
                 }
+                .scrollDismissesKeyboard(.interactively)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Live Log")
                             .font(.headline)
                         Spacer()
+                        if !controller.logs.isEmpty {
+                            Button("Copy") {
+                                copyLogEntries(controller.logs)
+                            }
+                        }
                         if controller.isRunning {
                             ProgressView()
                         }
@@ -82,11 +94,20 @@ struct AgentPanelView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
                     }
                 }
                 .padding(.horizontal)
             }
             .navigationTitle("AI Click Control")
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        isCommandFocused = false
+                    }
+                }
+            }
         }
     }
 
@@ -122,6 +143,17 @@ struct AgentPanelView: View {
         let height = Int(bounds.size.height)
         return "\(width)x\(height)"
     }
+
+    private func copyLogEntries(_ entries: [AgentLogEntry]) {
+        let lines = entries.map { entry in
+            let timestamp = entry.date.formatted(date: .omitted, time: .standard)
+            return "\(timestamp) [\(entry.kind.rawValue.uppercased())] \(entry.message)"
+        }
+        let text = lines.joined(separator: "\n")
+        #if canImport(UIKit)
+        UIPasteboard.general.string = text
+        #endif
+    }
 }
 
 private struct LogListView: View {
@@ -136,9 +168,11 @@ private struct LogListView: View {
                             Text(entry.date.formatted(date: .omitted, time: .standard))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
                             Text("[\(entry.kind.rawValue.uppercased())] \(entry.message)")
                                 .font(.callout)
                                 .foregroundStyle(color(for: entry.kind))
+                                .textSelection(.enabled)
                         }
                         .id(entry.id)
                         Divider()

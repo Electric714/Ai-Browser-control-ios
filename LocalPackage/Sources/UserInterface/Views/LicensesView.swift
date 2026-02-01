@@ -27,4 +27,13 @@ struct LicensesView: View {
         }
         return text
     }
+
+    private func loadLicensesText() -> String {
+        guard let url = Bundle.module.url(forResource: "Licenses", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            assertionFailure("Missing Licenses.md in UserInterface resources.")
+            return "Third-party licenses are currently unavailable."
+        }
+        return text
+    }
 }

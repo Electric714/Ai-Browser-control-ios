@@ -170,7 +170,7 @@ extension BrowserUI: ObservableObject {}
 
 private struct CommandOverlayView: View {
     @ObservedObject var controller: AgentController
-    @Binding var isCommandFocused: Bool
+    @FocusState.Binding var isCommandFocused: Bool
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
@@ -319,29 +319,6 @@ private extension BrowserView {
         CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
             .padding(.horizontal, 12)
             .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
-    }
-
-    func footer(proxy: WebViewProxy) -> some View {
-        Footer(store: store)
-            .transition(.move(edge: .bottom))
-            .environment(\.canGoBack, proxy.canGoBack)
-            .environment(\.canGoForward, proxy.canGoForward)
-    }
-
-    var floatingControls: some View {
-        VStack(spacing: 12) {
-            Button {
-                isPresentingAgentPanel = true
-            } label: {
-                Image(systemName: "sparkles")
-                    .padding(14)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
-            }
-            ShowToolbarButton(store: store)
-        }
-        .padding(20)
-        .transition(.move(edge: .bottom))
     }
 
     func updateActiveWebView(proxy: WebViewProxy) {

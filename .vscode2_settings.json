@@ -1,0 +1,10 @@
+{
+  "gitRemoteURL" : "https:\/\/github.com\/Electric714\/Ai-Browser-control-ios",
+  "isGitEnabled" : true,
+  "gitUserName" : "Electric714",
+  "gitUserEmail" : "kaleblouis1998@gmail.com",
+  "environmentVariables" : [
+
+  ],
+  "selectedGitignoreTemplate" : "Swift"
+}

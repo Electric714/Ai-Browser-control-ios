@@ -7,7 +7,7 @@ struct BrowserView: View {
     @StateObject private var webViewRegistry: ActiveWebViewRegistry
     @StateObject private var agentController: AgentController
     @State private var isPresentingAgentPanel = false
-    @State private var agentPanelDetent: PresentationDetent = .fraction(0.45)
+    @FocusState private var isCommandFocused: Bool
 
     init(store: Browser) {
         _store = StateObject(wrappedValue: store)
@@ -26,22 +26,28 @@ struct BrowserView: View {
                             .environment(\.isLoading, proxy.isLoading)
                             .environment(\.estimatedProgress, proxy.estimatedProgress)
                     }
-                    WebView(configuration: .forTelescopure)
-                        .navigationDelegate(store.navigationDelegate)
-                        .uiDelegate(store.uiDelegate)
-                        .refreshable()
-                        .allowsBackForwardNavigationGestures(true)
-                        .allowsOpaqueDrawing(proxy.url != nil)
-                        .allowsInspectable(true)
-                        .pageScaleFactor(store.pageScale.value)
-                        .overlay {
-                            if proxy.url == nil {
-                                LogoView()
+                    ZStack(alignment: .bottom) {
+                        WebView(configuration: .forTelescopure)
+                            .navigationDelegate(store.navigationDelegate)
+                            .uiDelegate(store.uiDelegate)
+                            .refreshable()
+                            .allowsBackForwardNavigationGestures(true)
+                            .allowsOpaqueDrawing(proxy.url != nil)
+                            .allowsInspectable(true)
+                            .pageScaleFactor(store.pageScale.value)
+                            .overlay {
+                                if proxy.url == nil {
+                                    LogoView()
+                                }
                             }
-                        }
-                        .onAppear {
-                            updateActiveWebView(proxy: proxy)
-                        }
+                            .onAppear {
+                                updateActiveWebView(proxy: proxy)
+                            }
+
+                        CommandOverlayView(controller: agentController, isCommandFocused: $isCommandFocused)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, store.isPresentedToolbar ? 70 : 16)
+                    }
                     if store.isPresentedToolbar {
                         Footer(store: store)
                             .transition(.move(edge: .bottom))
@@ -50,6 +56,9 @@ struct BrowserView: View {
                     }
                 }
                 .background(Color(.secondarySystemBackground))
+                .simultaneousGesture(TapGesture().onEnded {
+                    isCommandFocused = false
+                })
                 .task {
                     updateActiveWebView(proxy: proxy)
                     await store.send(.task(
@@ -92,12 +101,10 @@ struct BrowserView: View {
             SettingsView(store: store)
         }
         .sheet(isPresented: $isPresentingAgentPanel) {
-            AgentPanelView(controller: agentController, onRun: {
-                agentPanelDetent = .fraction(0.20)
-            })
-                .presentationDetents([.fraction(0.20), .fraction(0.45), .large], selection: $agentPanelDetent)
+            AgentPanelView(controller: agentController)
+                .presentationDetents([.fraction(0.35), .large])
                 .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.20)))
+                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.35)))
         }
         .sheet(item: $store.bookmarkManagement) { store in
             BookmarkManagementView(store: store)
@@ -120,6 +127,14 @@ struct BrowserView: View {
             isPresented: $store.isPresentedAlert,
             actions: {}
         )
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    isCommandFocused = false
+                }
+            }
+        }
         .onOpenURL { url in
             Task {
                 await store.send(.onOpenURL(url))
@@ -132,6 +147,74 @@ struct BrowserView: View {
 extension Browser: ObservableObject {}
 extension BrowserNavigation: ObservableObject {}
 extension BrowserUI: ObservableObject {}
+
+private struct CommandOverlayView: View {
+    @ObservedObject var controller: AgentController
+    @Binding var isCommandFocused: Bool
+    @FocusState private var isFieldFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("Command", text: $controller.command)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isFieldFocused)
+                    .submitLabel(.send)
+                    .onSubmit {
+                        controller.runCommand()
+                    }
+
+                Button(controller.isRunning ? "Running..." : "Send") {
+                    controller.runCommand()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRunDisabled)
+
+                Button("Stop") {
+                    controller.stop()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!controller.isRunning)
+            }
+
+            HStack(spacing: 8) {
+                Menu {
+                    Picker("Run Mode", selection: $controller.runMode) {
+                        ForEach(AgentController.RunMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                } label: {
+                    Text("Mode: \(controller.runMode.label)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if controller.isRunning {
+                    ProgressView()
+                }
+            }
+        }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .onChange(of: isFieldFocused) { _, newValue in
+            isCommandFocused = newValue
+        }
+        .onChange(of: isCommandFocused) { _, newValue in
+            if newValue != isFieldFocused {
+                isFieldFocused = newValue
+            }
+        }
+    }
+
+    private var isRunDisabled: Bool {
+        controller.isRunning
+            || !controller.isAgentModeEnabled
+            || controller.apiKey.isEmpty
+            || controller.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !controller.isWebViewAvailable
+    }
+}
 
 private extension BrowserView {
     func updateActiveWebView(proxy: WebViewProxy) {

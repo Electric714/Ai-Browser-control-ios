@@ -50,9 +50,11 @@ struct OpenRouterClient {
     static let defaultModel = "openai/gpt-4o-mini"
 
     let urlSession: URLSession
+    let defaultModel: String
 
-    init(urlSession: URLSession = .shared) {
+    init(urlSession: URLSession = .shared, defaultModel: String = "openai/gpt-4o-mini") {
         self.urlSession = urlSession
+        self.defaultModel = defaultModel
     }
 
     func generateActionPlan(
@@ -60,7 +62,7 @@ struct OpenRouterClient {
         instruction: String,
         clickMap: PageSnapshot,
         allowSensitiveClicks: Bool,
-        model: String,
+        modelId: String,
         temperature: Double,
         requestId: String
     ) async throws -> Result {
@@ -72,12 +74,22 @@ struct OpenRouterClient {
         let clickMapText = try encodeClickMap(clickMap)
 
         let systemPrompt = """
-        You control an in-app browser and must return strict JSON only (no markdown, no prose).
+        You control an in-app browser and must output strict JSON only (no markdown, no prose).
         Use only the provided clickMap ids; prefer id-based actions.
         Output one of:
         {"actions":[...]} or {"error":"..."}.
         Allowed actions: click, type, scroll, wait, navigate, ask_user, done.
-        For wait use {"type":"wait","ms":<integer 50..15000>} only; never use seconds or strings.
+
+        Schema requirements (strict):
+        - click must include a valid id: {"type":"click","id":"e1"}
+        - type must include text AND (id or selector): {"type":"type","id":"t1","text":"hello"} or {"type":"type","selector":"#q","text":"hello"}
+        - done must include non-empty summary: {"type":"done","summary":"Finished searching"}
+        - wait must use integer milliseconds only: {"type":"wait","ms":500} (50..15000)
+        - scroll: {"type":"scroll","direction":"down","amount":800}
+        - navigate: {"type":"navigate","url":"https://example.com"}
+        - ask_user: {"type":"ask_user","question":"Which result should I open?"}
+
+        Never emit partial actions (e.g., never emit type without id/selector, never emit done without summary).
         Ask for clarification with {"actions":[{"type":"ask_user","question":"..."}]} when uncertain.
         Never click pay/checkout/confirm purchase unless allowSensitiveClicks is true.
         """
@@ -89,8 +101,9 @@ struct OpenRouterClient {
         Click map JSON: \(clickMapText)
         """
 
+        let resolvedModel = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = RequestPayload(
-            model: model,
+            model: resolvedModel.isEmpty ? defaultModel : resolvedModel,
             messages: [
                 Message(role: "system", content: systemPrompt),
                 Message(role: "user", content: userPrompt)
@@ -129,18 +142,28 @@ struct OpenRouterClient {
         instruction: String,
         clickMap: PageSnapshot,
         allowSensitiveClicks: Bool,
-        model: String,
+        modelId: String,
         temperature: Double
     ) -> String {
         let redactedClickMap = truncateClickMap(clickMap, maxItems: 25)
         let clickMapText = (try? encodeClickMap(redactedClickMap)) ?? "{}"
         let systemPrompt = """
-        You control an in-app browser and must return strict JSON only (no markdown, no prose).
+        You control an in-app browser and must output strict JSON only (no markdown, no prose).
         Use only the provided clickMap ids; prefer id-based actions.
         Output one of:
         {"actions":[...]} or {"error":"..."}.
         Allowed actions: click, type, scroll, wait, navigate, ask_user, done.
-        For wait use {"type":"wait","ms":<integer 50..15000>} only; never use seconds or strings.
+
+        Schema requirements (strict):
+        - click must include a valid id: {"type":"click","id":"e1"}
+        - type must include text AND (id or selector): {"type":"type","id":"t1","text":"hello"} or {"type":"type","selector":"#q","text":"hello"}
+        - done must include non-empty summary: {"type":"done","summary":"Finished searching"}
+        - wait must use integer milliseconds only: {"type":"wait","ms":500} (50..15000)
+        - scroll: {"type":"scroll","direction":"down","amount":800}
+        - navigate: {"type":"navigate","url":"https://example.com"}
+        - ask_user: {"type":"ask_user","question":"Which result should I open?"}
+
+        Never emit partial actions (e.g., never emit type without id/selector, never emit done without summary).
         Ask for clarification with {"actions":[{"type":"ask_user","question":"..."}]} when uncertain.
         Never click pay/checkout/confirm purchase unless allowSensitiveClicks is true.
         """
@@ -150,8 +173,9 @@ struct OpenRouterClient {
         allowSensitiveClicks: \(allowSensitiveClicks)
         Click map JSON: \(clickMapText)
         """
+        let resolvedModel = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = RequestPayload(
-            model: model,
+            model: resolvedModel.isEmpty ? defaultModel : resolvedModel,
             messages: [
                 Message(role: "system", content: systemPrompt),
                 Message(role: "user", content: userPrompt)

@@ -159,10 +159,11 @@ public final class AgentController: ObservableObject {
         self.lastError = nil
         self.apiKey = keychainStore.load(key: "openRouterAPIKey") ?? ""
         let storedModelId = userDefaults.string(forKey: Self.modelIdKey)
-        self.modelId = storedModelId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        let resolvedModelId = storedModelId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? storedModelId!
             : Self.defaultModelId
-        self.openRouterModel = self.modelId
+        self.modelId = resolvedModelId
+        self.openRouterModel = resolvedModelId
         let storedTemp = userDefaults.object(forKey: Self.temperatureKey) as? Double
         self.temperature = storedTemp ?? 0
         self.isWebViewAvailable = false

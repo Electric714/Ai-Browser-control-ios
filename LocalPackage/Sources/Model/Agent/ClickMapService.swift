@@ -317,9 +317,9 @@ extension WKWebView {
     private static let jsExceptionSourceURLKey = "WKJavaScriptExceptionSourceURL"
 
     private func fetchDocumentReadyState() async -> String? {
-        await withCheckedContinuation { cont in
+        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             self.evaluateJavaScript("document.readyState") { result, _ in
-                cont.resume(returning: result as? String)
+                continuation.resume(returning: result as? String)
             }
         }
     }
@@ -362,7 +362,7 @@ extension WKWebView {
             }
         }
 
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             self.evaluateJavaScript(js) { result, error in
                 if let error {
                     let nsError = error as NSError

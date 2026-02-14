@@ -191,18 +191,34 @@ struct AgentParser {
         }
 
         var depth = 0
+        var isInsideString = false
+        var isEscaping = false
         var index = startIndex
         while index < trimmed.endIndex {
             let char = trimmed[index]
-            if char == "{" {
-                depth += 1
-            } else if char == "}" {
-                depth -= 1
-                if depth == 0 {
-                    let endIndex = trimmed.index(after: index)
-                    return String(trimmed[startIndex..<endIndex])
+
+            if isInsideString {
+                if isEscaping {
+                    isEscaping = false
+                } else if char == "\\" {
+                    isEscaping = true
+                } else if char == "\"" {
+                    isInsideString = false
+                }
+            } else {
+                if char == "\"" {
+                    isInsideString = true
+                } else if char == "{" {
+                    depth += 1
+                } else if char == "}" {
+                    depth -= 1
+                    if depth == 0 {
+                        let endIndex = trimmed.index(after: index)
+                        return String(trimmed[startIndex..<endIndex])
+                    }
                 }
             }
+
             index = trimmed.index(after: index)
         }
 

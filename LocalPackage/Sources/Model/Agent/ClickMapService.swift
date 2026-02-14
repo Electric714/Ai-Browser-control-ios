@@ -362,7 +362,7 @@ extension WKWebView {
             }
         }
 
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             self.evaluateJavaScript(js) { result, error in
                 if let error {
                     let nsError = error as NSError

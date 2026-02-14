@@ -177,7 +177,7 @@ public final class AgentController: NSObject, ObservableObject, WKScriptMessageH
         registryCancellable = webViewRegistry.$webView.sink { [weak self] webView in
             guard let self else { return }
             self.refreshWebViewAvailability()
-            Task { [weak self] in
+            Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(150))
                 self?.refreshWebViewAvailability()
             }
@@ -195,9 +195,9 @@ public final class AgentController: NSObject, ObservableObject, WKScriptMessageH
         self.webViewProxy = proxy
         webViewRegistry.update(from: proxy)
         refreshWebViewAvailability()
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(200))
-            await self?.refreshWebViewAvailability()
+            self?.refreshWebViewAvailability()
         }
     }
 
@@ -221,7 +221,7 @@ public final class AgentController: NSObject, ObservableObject, WKScriptMessageH
         if let mode {
             runMode = mode
         }
-        runTask = Task { [weak self] in
+        runTask = Task { @MainActor [weak self] in
             await self?.executeCommand()
         }
     }

@@ -378,14 +378,14 @@ extension WKWebView {
                                 NSUnderlyingErrorKey: nsError
                             ], uniquingKeysWith: { _, new in new })
                     )
-                    cont.resume(throwing: wrapped)
+                    continuation.resume(throwing: wrapped)
                 } else {
                     if let result = result as? String {
-                        cont.resume(returning: result)
+                        continuation.resume(returning: result)
                     } else if let result = result {
-                        cont.resume(returning: String(describing: result))
+                        continuation.resume(returning: String(describing: result))
                     } else {
-                        cont.resume(throwing: EvalJSError.jsReturnedNil)
+                        continuation.resume(throwing: EvalJSError.jsReturnedNil)
                     }
                 }
             }

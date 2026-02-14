@@ -6,7 +6,7 @@ import WebUI
 import WebKit
 
 @MainActor
-public final class AgentController: ObservableObject {
+public final class AgentController: NSObject, ObservableObject, WKScriptMessageHandler {
     public enum RunMode: String, CaseIterable, Identifiable {
         case step
         case auto
@@ -89,6 +89,9 @@ public final class AgentController: ObservableObject {
     private var actionQueue: [AgentAction] = []
     private let maxActionsPerRun = 3
 
+    private let jsExceptionHandlerName = "jsException"
+    private var registeredJSExceptionWebViewID: ObjectIdentifier?
+
     @Published public var command: String
     @Published public var isAgentModeEnabled: Bool
     @Published public var allowSensitiveClicks: Bool
@@ -170,6 +173,7 @@ public final class AgentController: ObservableObject {
         self.webViewBounds = nil
         self.webViewURL = nil
         self.activeWebViewIdentifier = nil
+        super.init()
         registryCancellable = webViewRegistry.$webView.sink { [weak self] webView in
             guard let self else { return }
             self.refreshWebViewAvailability()
@@ -359,11 +363,16 @@ public final class AgentController: ObservableObject {
 
     private func currentWebView() -> WKWebView? {
         if let resolved = webViewRegistry.current() {
+            ensureJSExceptionBridgeInstalled(on: resolved)
             return resolved
         }
         if let proxy = webViewProxy {
             webViewRegistry.update(from: proxy)
-            return webViewRegistry.current()
+            let resolved = webViewRegistry.current()
+            if let resolved {
+                ensureJSExceptionBridgeInstalled(on: resolved)
+            }
+            return resolved
         }
         return nil
     }
@@ -371,6 +380,7 @@ public final class AgentController: ObservableObject {
     private func refreshWebViewAvailability() {
         let view = webViewRegistry.current()
         if let view {
+            ensureJSExceptionBridgeInstalled(on: view)
             webViewBounds = view.bounds
             webViewURL = view.url?.absoluteString
             activeWebViewIdentifier = ObjectIdentifier(view)
@@ -567,6 +577,44 @@ public final class AgentController: ObservableObject {
             }
         }
         return summaries
+    }
+
+
+    private func ensureJSExceptionBridgeInstalled(on webView: WKWebView) {
+        let identifier = ObjectIdentifier(webView)
+        guard registeredJSExceptionWebViewID != identifier else { return }
+
+        if let previousID = registeredJSExceptionWebViewID, previousID != identifier {
+            logger.debug("Switching JS exception handler from id=\(String(describing: previousID), privacy: .public) to id=\(String(describing: identifier), privacy: .public)")
+        }
+
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: jsExceptionHandlerName)
+        webView.configuration.userContentController.add(self, name: jsExceptionHandlerName)
+        registeredJSExceptionWebViewID = identifier
+    }
+
+    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == jsExceptionHandlerName else { return }
+        guard let payload = message.body as? [String: Any] else {
+            logger.error("JS Exception bridge received malformed payload: \(String(describing: message.body), privacy: .public)")
+            return
+        }
+
+        let messageText = (payload["message"] as? String) ?? "Unknown JavaScript error"
+        let source = (payload["source"] as? String) ?? "<unknown source>"
+        let line = payload["line"].map { String(describing: $0) } ?? "<unknown>"
+        let column = payload["column"].map { String(describing: $0) } ?? "<unknown>"
+        let stack = (payload["stack"] as? String) ?? "<no stack>"
+
+        let formatted = """
+        JS Exception — message: \(messageText)
+        source: \(source)
+        line: \(line), column: \(column)
+        stack: \(stack)
+        """
+
+        logger.error("\(formatted, privacy: .public)")
+        appendLog(.init(date: Date(), kind: .error, message: formatted))
     }
 
     private func handleError(_ error: any Error) {

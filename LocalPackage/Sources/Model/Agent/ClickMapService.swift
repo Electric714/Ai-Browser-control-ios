@@ -295,15 +295,90 @@ final class ClickMapService {
 }
 
 extension WKWebView {
-    enum EvalJSError: Error {
+    enum EvalJSError: LocalizedError {
         case jsReturnedNil
+        case documentNotReady(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .jsReturnedNil:
+                return "JavaScript evaluation returned nil."
+            case let .documentNotReady(state):
+                return "Skipped JavaScript evaluation because document.readyState=\(state)."
+            }
+        }
+    }
+
+    private static let jsLogger = Logger(subsystem: "Agent", category: "JavaScript")
+
+    private static let jsExceptionMessageKey = "WKJavaScriptExceptionMessage"
+    private static let jsExceptionLineNumberKey = "WKJavaScriptExceptionLineNumber"
+    private static let jsExceptionColumnNumberKey = "WKJavaScriptExceptionColumnNumber"
+    private static let jsExceptionSourceURLKey = "WKJavaScriptExceptionSourceURL"
+
+    private func fetchDocumentReadyState() async -> String? {
+        await withCheckedContinuation { cont in
+            self.evaluateJavaScript("document.readyState") { result, _ in
+                cont.resume(returning: result as? String)
+            }
+        }
+    }
+
+    private func formatJavaScriptError(_ error: NSError) -> (message: String, details: [String: Any]) {
+        let exceptionMessage = error.userInfo[Self.jsExceptionMessageKey] as? String
+        let lineNumber = error.userInfo[Self.jsExceptionLineNumberKey]
+        let columnNumber = error.userInfo[Self.jsExceptionColumnNumberKey]
+        let sourceURL = error.userInfo[Self.jsExceptionSourceURLKey] as? String
+
+        var details: [String: Any] = [:]
+        if let exceptionMessage { details[Self.jsExceptionMessageKey] = exceptionMessage }
+        if let lineNumber { details[Self.jsExceptionLineNumberKey] = lineNumber }
+        if let columnNumber { details[Self.jsExceptionColumnNumberKey] = columnNumber }
+        if let sourceURL { details[Self.jsExceptionSourceURLKey] = sourceURL }
+
+        var message = error.localizedDescription
+        if !details.isEmpty {
+            let rendered = [
+                exceptionMessage.map { "message=\($0)" },
+                sourceURL.map { "source=\($0)" },
+                lineNumber.map { "line=\($0)" },
+                columnNumber.map { "column=\($0)" }
+            ]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+            message += " [\(rendered)]"
+        }
+
+        return (message, details)
     }
 
     func evalJSString(_ js: String) async throws -> String {
+        let trimmed = js.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed != "document.readyState" {
+            let readyState = await fetchDocumentReadyState()
+            if let readyState, readyState != "interactive", readyState != "complete" {
+                Self.jsLogger.warning("Skipping JavaScript evaluation because document.readyState=\(readyState, privacy: .public)")
+                throw EvalJSError.documentNotReady(readyState)
+            }
+        }
+
         try await withCheckedThrowingContinuation { cont in
             self.evaluateJavaScript(js) { result, error in
                 if let error = error {
-                    cont.resume(throwing: error)
+                    let nsError = error as NSError
+                    let formatted = formatJavaScriptError(nsError)
+                    Self.jsLogger.error("JavaScript evaluation failed: \(formatted.message, privacy: .public)")
+                    let wrapped = NSError(
+                        domain: "Agent.JavaScriptError",
+                        code: nsError.code,
+                        userInfo: nsError.userInfo
+                            .merging(formatted.details, uniquingKeysWith: { current, _ in current })
+                            .merging([
+                                NSLocalizedDescriptionKey: formatted.message,
+                                NSUnderlyingErrorKey: nsError
+                            ], uniquingKeysWith: { _, new in new })
+                    )
+                    cont.resume(throwing: wrapped)
                 } else {
                     if let result = result as? String {
                         cont.resume(returning: result)

@@ -364,9 +364,9 @@ extension WKWebView {
 
         try await withCheckedThrowingContinuation { continuation in
             self.evaluateJavaScript(js) { result, error in
-                if let error = error {
+                if let error {
                     let nsError = error as NSError
-                    let formatted = formatJavaScriptError(nsError)
+                    let formatted = self.formatJavaScriptError(nsError)
                     Self.jsLogger.error("JavaScript evaluation failed: \(formatted.message, privacy: .public)")
                     let wrapped = NSError(
                         domain: "Agent.JavaScriptError",
@@ -379,15 +379,20 @@ extension WKWebView {
                             ], uniquingKeysWith: { _, new in new })
                     )
                     continuation.resume(throwing: wrapped)
-                } else {
-                    if let result = result as? String {
-                        continuation.resume(returning: result)
-                    } else if let result = result {
-                        continuation.resume(returning: String(describing: result))
-                    } else {
-                        continuation.resume(throwing: EvalJSError.jsReturnedNil)
-                    }
+                    return
                 }
+
+                if let stringResult = result as? String {
+                    continuation.resume(returning: stringResult)
+                    return
+                }
+
+                if let result {
+                    continuation.resume(returning: String(describing: result))
+                    return
+                }
+
+                continuation.resume(throwing: EvalJSError.jsReturnedNil)
             }
         }
     }

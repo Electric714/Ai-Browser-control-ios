@@ -356,13 +356,15 @@ extension WKWebView {
         let trimmed = js.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed != "document.readyState" {
             let readyState = await fetchDocumentReadyState()
-            if let readyState, readyState != "interactive", readyState != "complete" {
-                Self.jsLogger.warning("Skipping JavaScript evaluation because document.readyState=\(readyState, privacy: .public)")
-                throw EvalJSError.documentNotReady(readyState)
+            if let readyState {
+                guard readyState == "interactive" || readyState == "complete" else {
+                    Self.jsLogger.warning("Skipping JavaScript evaluation because document.readyState=\(readyState, privacy: .public)")
+                    throw EvalJSError.documentNotReady(readyState)
+                }
             }
         }
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+        let evaluatedString: String = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             self.evaluateJavaScript(js) { result, error in
                 if let error {
                     let nsError = error as NSError
@@ -395,5 +397,7 @@ extension WKWebView {
                 continuation.resume(throwing: EvalJSError.jsReturnedNil)
             }
         }
+
+        return evaluatedString
     }
 }

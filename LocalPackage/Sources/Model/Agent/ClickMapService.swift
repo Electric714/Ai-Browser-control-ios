@@ -37,19 +37,21 @@ final class ClickMapService {
     private let defaultSelector = "a[href],button,input,textarea,[contenteditable],[onclick],[role=\"button\"],[role=\"link\"]"
     private let logger = Logger(subsystem: "Agent", category: "ClickMap")
 
-    private func escapeJSString(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r")
+    private func jsStringLiteral(_ value: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+              let encodedArray = String(data: data, encoding: .utf8),
+              encodedArray.count >= 2
+        else {
+            return "\"\""
+        }
+        return String(encodedArray.dropFirst().dropLast())
     }
 
     private func extractJS(selector: String) -> String {
-        let escapedSelector = escapeJSString(selector)
+        let selectorLiteral = jsStringLiteral(selector)
         return #"""
         (function() {
-          const selector = "\#(escapedSelector)";
+          const selector = \#(selectorLiteral);
           const els = Array.from(document.querySelectorAll(selector));
           const w = window.innerWidth || 1;
           const h = window.innerHeight || 1;
@@ -107,6 +109,23 @@ final class ClickMapService {
             return Math.max(0, Math.min(1, value));
           }
 
+          function roleFor(el, tag, typeAttr) {
+            if (el.isContentEditable) return 'contenteditable';
+            if (tag === 'TEXTAREA') return 'textarea';
+            if (tag === 'INPUT') {
+              if (!['button','submit','reset','checkbox','radio','file','range','color','image'].includes(typeAttr)) {
+                return 'textbox';
+              }
+              if (['button','submit','reset','image'].includes(typeAttr)) {
+                return 'button';
+              }
+              return 'input';
+            }
+            if (tag === 'A') return 'link';
+            if (tag === 'BUTTON') return 'button';
+            return 'other';
+          }
+
           const usedIds = new Set();
           let maxId = 0;
           for (const el of els) {
@@ -149,10 +168,7 @@ final class ClickMapService {
             }
 
             const roleAttr = (el.getAttribute('role') || '').toLowerCase();
-            const role = roleAttr || (el.isContentEditable ? 'contenteditable'
-              : (tag === 'TEXTAREA' ? 'textarea'
-                : (tag === 'INPUT' && !['button','submit','reset','checkbox','radio','file','range','color','image'].includes(typeAttr) ? 'textbox'
-                  : (tag === 'A' ? 'link' : (tag === 'BUTTON' ? 'button' : (tag === 'INPUT' && ['button','submit','reset','image'].includes(typeAttr) ? 'button' : (tag === 'INPUT' ? 'input' : 'other'))))));
+            const role = roleAttr || roleFor(el, tag, typeAttr);
             const disabled = !!(el.disabled || el.getAttribute('aria-disabled') === 'true');
             const href = (el.getAttribute('href') || '').trim() || null;
             const label = labelFor(el);
@@ -203,10 +219,11 @@ final class ClickMapService {
     }
 
     func click(id: String, webView: WKWebView) async throws {
-        let safeId = escapeJSString(id)
+        let idLiteral = jsStringLiteral(id)
         let js = """
         (function(){
-          const el = document.querySelector('[data-ai-id="\(safeId)"]');
+          const id = \(idLiteral);
+          const el = document.querySelector('[data-ai-id="' + id + '"]');
           if (!el) return "NOT_FOUND";
           el.click();
           return "OK";
@@ -219,10 +236,11 @@ final class ClickMapService {
     }
 
     func navigate(url: String, webView: WKWebView) async throws {
-        let safeUrl = url.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let urlLiteral = jsStringLiteral(url)
         let js = """
         (function(){
-          window.location.href = "\(safeUrl)";
+          const url = \(urlLiteral);
+          window.location.href = url;
           return "OK";
         })();
         """
@@ -230,10 +248,11 @@ final class ClickMapService {
     }
 
     func executeClick(id: String, webView: WKWebView, selector: String? = nil) async throws -> PageSnapshot {
-        let safeId = escapeJSString(id)
+        let idLiteral = jsStringLiteral(id)
         let js = """
         (function(){
-          const el = document.querySelector('[data-ai-id="\(safeId)"]');
+          const id = \(idLiteral);
+          const el = document.querySelector('[data-ai-id="' + id + '"]');
           if (!el) return "NOT_FOUND";
           el.click();
           return "OK";
@@ -247,24 +266,27 @@ final class ClickMapService {
     }
 
     func typeText(id: String?, selector: String?, text: String, webView: WKWebView) async throws {
-        let safeId = escapeJSString(id ?? "")
-        let safeSelector = escapeJSString(selector ?? "")
-        let safeText = escapeJSString(text)
+        let idLiteral = jsStringLiteral(id ?? "")
+        let selectorLiteral = jsStringLiteral(selector ?? "")
+        let textLiteral = jsStringLiteral(text)
         let js = """
         (function(){
+          const id = \(idLiteral);
+          const selector = \(selectorLiteral);
+          const text = \(textLiteral);
           let el = null;
-          if ("\(safeId)".length > 0) {
-            el = document.querySelector('[data-ai-id="\(safeId)"]');
+          if (id.length > 0) {
+            el = document.querySelector('[data-ai-id="' + id + '"]');
           }
-          if (!el && "\(safeSelector)".length > 0) {
-            try { el = document.querySelector("\(safeSelector)"); } catch (e) {}
+          if (!el && selector.length > 0) {
+            try { el = document.querySelector(selector); } catch (e) {}
           }
           if (!el) return "NOT_FOUND";
           el.focus();
           if (el.isContentEditable) {
-            el.textContent = "\(safeText)";
+            el.textContent = text;
           } else if ('value' in el) {
-            el.value = "\(safeText)";
+            el.value = text;
           }
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));

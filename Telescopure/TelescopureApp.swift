@@ -1,16 +1,10 @@
-/*
- TelescopureApp.swift
- Telescopure
-
- Created by Takuto Nakamura on 2023/10/19.
-*/
-
 import SwiftUI
-import UserInterface
 
 @main
-struct TelescopureApp: App {
+struct WebPuppetApp: App {
     var body: some Scene {
-        BrowserScene()
+        WindowGroup {
+            WebPuppetRootView()
+        }
     }
 }

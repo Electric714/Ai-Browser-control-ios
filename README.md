@@ -1,83 +1,84 @@
-# <img src="Resources/icon.png" alt="logo" width="30px" height="30px" /> Telescopure
+# WebPuppet
 
-WiOS is a browser for iOS which has AI LLM function to control your bowser via api .<br>
-You can use Telescopure to debug your application that work with the browser.
+WebPuppet is a private, developer-signed iOS web automation app for personal use.
 
+## Why this exists
+This project rebuilds the core product behavior of a reverse-engineered abandoned iOS app:
+- embedded browser automation with `WKWebView`
+- JavaScript injection and message handlers
+- record taps/interactions into reusable flows
+- replay with multi-signal locators and fallback matching
+- local-first persistence and JSON flow import/export
 
+## Current architecture
+- `Telescopure/App`: app entry and root flow editor UI
+- `Telescopure/Features/Browser`: SwiftUI `WKWebView` wrapper and controls
+- `Telescopure/Features/Runner`: flow replay engine
+- `Telescopure/Features/Documents`: `.webpuppetflow` document support
+- `Telescopure/Core/Models`: flow/step/locator/run data models
+- `Telescopure/Core/WebBridge`: JS ↔ native bridge
+- `Telescopure/Core/Persistence`: JSON repository
+- `Telescopure/Core/Logging`: in-app visible logs
+- `Telescopure/Resources/InjectedJS/Recorder.js`: recording/replay JS helpers
+- `Telescopure/Features/Scanning`, `Features/OCR`, `Features/Intents`, `Core/Utils/AIService`: extension scaffolds
 
+## MVP behavior
+1. Open arbitrary websites in an embedded browser.
+2. Toggle Record mode.
+3. Tap elements; injected JS captures metadata and sends it via:
+   - `writeLog`
+   - `didClickElement`
+4. Save captured click steps into a flow.
+5. Replay the flow with fallback locator matching.
+6. See logs and extracted outputs.
+7. Export/import JSON-based `.webpuppetflow` files.
 
-## Functions
-- Open Router Ai Api compatible
-- sends a wuery to the llm to have the AI control the browser autonomiously
-- Settable as default browser.
-- Open an HTTP or HTTPS link.
-- Search by keywords.
-- Browse a page in the full screen.
-- Pull to refresh a page.
-- Page Zoom.
-- Bookmark user's favorite page.
-- Open a link of other app in Telescopure.
-- User can select a search engine (Google/Bing/DuckDuckGo).
-- Support light and dark themes.
+## Flow format
+The flow file is plain JSON (easy to inspect).
 
-## Requirements
+Top-level:
+- `id`, `name`, `startURL`, `createdAt`, `updatedAt`
+- `steps`
+- `inputDefinitions`
+- `outputDefinitions`
 
-- Written in Swift 6.2
-- Compatible with iOS 26.2+
-- Development with Xcode 26.2
+Each step includes:
+- `order`, `type` (`click`, `typeText`, `wait`, `extractText`)
+- `locator`
+- `inputValue` or `inputBindingKey`
+- `outputKey`
+- `options` (`continueOnFailure`, delay)
 
-## Supported languages
+Locator stores multiple matching signals:
+- id
+- CSS selector
+- tag/classes
+- aria-label
+- `data-*`
+- text snippet
+- sibling index
+- parent trail
+- frame/shadow metadata placeholders
 
-- English (primary)
+## Replay strategy
+Current fallback order:
+1. exact id
+2. CSS selector
+3. tag + classes
+4. aria-label
+5. text snippet match
 
+Additional fallbacks (data attributes, ancestor constraints, sibling heuristics, iframe path) are already represented in model fields and can be expanded in JS helper logic.
 
-## Screenshots
+## Limitations (current)
+- Recorder currently creates click steps automatically.
+- Flow step editing UI is minimal.
+- Barcode/OCR/AI/App Intents are scaffolded, not fully implemented.
+- iOS build must be run on macOS/Xcode (this environment cannot execute `xcodebuild`).
 
-<div>
-  <img src="Resources/1-browsing-1.png" alt="browsing" width="150px" />
-  <img src="Resources/2-browsing-2.png" alt="full screen" width="150px" />
-  <img src="Resources/3-bookmark.png" alt="bookmark" width="150px" />
-  <img src="Resources/4-settings-1.png" alt="settings" width="150px" />
-</div>
-
-<div>
-  <img src="Resources/5-settings-2.png" alt="set as default browser" width="150px" />
-  <img src="Resources/6-settings-3.png" alt="select search engine" width="150px" />
-  <img src="Resources/7-share-link-1.png" alt="share link 1" width="150px" />
-  <img src="Resources/8-share-link-2.png" alt="share link 2" width="150px" />
-</div>
-
-## Implementation
-
-- SwiftUI based ai browser App
-- WKWebView wrapped in UIViewRepresentable
-- Share Extension
-
-## Tree
-
-```plain
-.
-├── LocalPackage
-│   ├── Package.swift
-│   ├── Sources
-│   │   ├── DataSource
-│   │   ├── Model
-│   │   └── UserInterface
-│   └── Tests
-│       └── ModelTests
-├── Telescopure
-│   ├── Assets.xcassets
-│   ├── Info.plist
-│   ├── InfoPlist.xcstrings
-│   ├── Settings.bundle
-│   └── TelescopureApp.swift
-├── Telescopure.xcodeproj
-├── Telescopure.xctestplan
-├── TelescopureShare
-│   ├── MainInterface.storyboard
-│   ├── Info.plist
-│   ├── InfoPlist.xcstrings
-│   └── ShareViewController.swift
-└── TelescopureUITests
-    └── TelescopureUITests.swift
-```
+## Local development notes
+- App uses broad ATS allowances for practical personal-use browsing.
+- Camera permission text is included for barcode flow inputs.
+- Custom document type and URL scheme are configured:
+  - extension: `.webpuppetflow`
+  - URL scheme: `webpuppet://`

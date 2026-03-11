@@ -1,0 +1,64 @@
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      SCHEME: Telescopure
+      CONFIGURATION: Release
+      SDK: iphoneos
+      ARCHIVE_PATH: ${{ github.workspace }}/build/WebPuppet.xcarchive
+      EXPORT_PATH: ${{ github.workspace }}/build/export
+      DERIVED_DATA: ${{ github.workspace }}/build/DerivedData
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Resolve Swift Package dependencies
+        run: xcodebuild -resolvePackageDependencies -project Telescopure.xcodeproj -scheme "$SCHEME"
+
+      - name: Clean archive (unsigned)
+        run: |
+          set -eo pipefail
+          xcodebuild clean archive \
+            -project Telescopure.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -sdk "$SDK" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -archivePath "$ARCHIVE_PATH" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: Export unsigned IPA
+        run: |
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>development</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>stripSwiftSymbols</key><true/>
+            <key>compileBitcode</key><false/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist ExportOptions.plist \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: webpuppet-unsigned-ipa
+          path: |
+            build/export/*.ipa
+            build/WebPuppet.xcarchive
